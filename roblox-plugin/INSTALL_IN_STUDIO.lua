@@ -1,9 +1,15 @@
 --!strict
 --[[
-	INSTALL_IN_STUDIO.lua
+	INSTALL_IN_STUDIO.lua (v0.0.2)
 	Single-file bundled distribution of the FigmaToRoblox plugin.
+	Supports:
+	• AutoLayout Engine (HUG, FILL, FIXED, SpaceBetween, UIPadding)
+	• Advanced Visuals (Drop Shadows, Multi-stop UIGradients, Corner Radii, Strokes)
+	• Interactive Controls (TextButton, ImageButton, TextBox)
+	• Vectors & ImageLabels
+	• Studio Theme Responsiveness & ChangeHistoryService Undo/Redo
 	
-	HOW TO RE-INSTALL:
+	HOW TO INSTALL / UPDATE:
 	1. In Roblox Studio, open any place.
 	2. In Explorer, create a Script (e.g. under ServerStorage or workspace).
 	3. Paste this entire file into that Script.
@@ -33,7 +39,7 @@ end
 -- =============================================================================
 local Config = {
 	PluginName = "FigmaToRoblox",
-	PluginId = "FigmaToRoblox_DockWidget_v2.3",
+	PluginId = "FigmaToRoblox_DockWidget_v2.5",
 	ToolbarTitle = "Figma UI",
 	ButtonTitle = "Figma to Roblox",
 	ButtonTooltip = "Convert Figma JSON into native Roblox UI instances",
@@ -176,6 +182,10 @@ local function normalizeNode(rawNode: any): any?
 		id = tostring(rawNode.id or rawNode.name or HttpService:GenerateGUID(false)),
 		name = tostring(rawNode.name or rawNode.id or "FigmaElement"),
 		type = string.upper(tostring(rawNode.type or rawNode.nodeType or rawNode.kind or "FRAME")),
+		role = rawNode.role,
+		isButton = rawNode.isButton,
+		isInput = rawNode.isInput,
+		isVector = rawNode.isVector,
 		visible = if rawNode.visible ~= nil then rawNode.visible else true,
 		opacity = if type(rawNode.opacity) == "number" then rawNode.opacity else 1,
 		absoluteBoundingBox = rawNode.absoluteBoundingBox or rawNode.absoluteRenderBounds or rawNode.bounds,
@@ -184,6 +194,7 @@ local function normalizeNode(rawNode: any): any?
 		backgroundColor = rawNode.backgroundColor or rawNode.bgColor,
 		strokes = rawNode.strokes or rawNode.stroke,
 		strokeWeight = rawNode.strokeWeight or rawNode.borderWidth or rawNode.strokeWidth,
+		effects = rawNode.effects or rawNode.effect,
 		cornerRadius = rawNode.cornerRadius or rawNode.radius,
 		rectangleCornerRadii = rawNode.rectangleCornerRadii,
 		clipsContent = rawNode.clipsContent,
@@ -195,6 +206,8 @@ local function normalizeNode(rawNode: any): any?
 		paddingRight = rawNode.paddingRight,
 		paddingTop = rawNode.paddingTop,
 		paddingBottom = rawNode.paddingBottom,
+		layoutSizingHorizontal = rawNode.layoutSizingHorizontal,
+		layoutSizingVertical = rawNode.layoutSizingVertical,
 		characters = rawNode.characters or rawNode.text or rawNode.value or rawNode.content,
 		style = rawNode.style or rawNode.textStyle,
 		children = nil,
@@ -288,7 +301,8 @@ function JsonParser.GetSample(): string
 		backgroundColor = { r = 0.78, g = 0.78, b = 0.78, a = 1 },
 		strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
 		strokeWeight = 12,
-		clipsContent = true,
+		effects = { { type = "DROP_SHADOW", visible = true, color = { r = 0, g = 0, b = 0, a = 0.35 }, offset = { x = 0, y = 8 }, radius = 16 } },
+		clipsContent = false,
 		children = {
 			{
 				id = "10:101",
@@ -303,12 +317,17 @@ function JsonParser.GetSample(): string
 				id = "10:102",
 				name = "TextButton",
 				type = "FRAME",
+				role = "BUTTON",
+				isButton = true,
+				layoutSizingHorizontal = "FIXED",
+				layoutSizingVertical = "FIXED",
 				absoluteBoundingBox = { x = 50, y = 160, width = 540, height = 130 },
 				cornerRadius = 65,
 				fills = { { type = "SOLID", visible = true, color = { r = 0.05, g = 0.82, b = 0.18, a = 1 } } },
 				strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
 				strokeWeight = 10,
-				clipsContent = true,
+				effects = { { type = "DROP_SHADOW", visible = true, color = { r = 0, g = 0, b = 0, a = 0.25 }, offset = { x = 0, y = 4 }, radius = 8 } },
+				clipsContent = false,
 				children = {
 					{
 						id = "10:103",
@@ -329,6 +348,9 @@ end
 -- 4. Translators & Generator Pipeline
 -- =============================================================================
 local StyleTranslator = {}
+local SHADOW_ASSET = "rbxassetid://1316045217"
+local SHADOW_RECT = Rect.new(10, 10, 118, 118)
+
 function StyleTranslator.ToColor3(figmaColor: any?): (Color3, number)
 	if not figmaColor then
 		return Color3.new(1, 1, 1), 0
@@ -427,6 +449,75 @@ function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
 	if node.clipsContent ~= nil then
 		guiObject.ClipsDescendants = node.clipsContent
 	end
+	
+	-- Multi-stop Linear Gradients
+	local fills = node.fills or node.fill
+	if fills and type(fills) == "table" then
+		for _, fill in ipairs(fills) do
+			if type(fill) == "table" and fill.visible ~= false and fill.type == "GRADIENT_LINEAR" and fill.gradientStops then
+				local colorKeypoints = {}
+				local transKeypoints = {}
+				for _, stop in ipairs(fill.gradientStops) do
+					local stopColor, stopTrans = StyleTranslator.ToColor3(stop.color)
+					local pos = math.clamp(stop.position or 0, 0, 1)
+					table.insert(colorKeypoints, ColorSequenceKeypoint.new(pos, stopColor))
+					table.insert(transKeypoints, NumberSequenceKeypoint.new(pos, stopTrans))
+				end
+				if #colorKeypoints >= 2 then
+					local gradient = Instance.new("UIGradient")
+					gradient.Name = "FigmaGradient"
+					gradient.Color = ColorSequence.new(colorKeypoints)
+					if #transKeypoints >= 2 then
+						gradient.Transparency = NumberSequence.new(transKeypoints)
+					end
+					if fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
+						local p0 = fill.gradientHandlePositions[1]
+						local p1 = fill.gradientHandlePositions[2]
+						local dx = (p1.x or 0) - (p0.x or 0)
+						local dy = (p1.y or 0) - (p0.y or 0)
+						gradient.Rotation = math.round(math.deg(math.atan2(dy, dx)))
+					end
+					gradient.Parent = guiObject
+				end
+				break
+			end
+		end
+	end
+end
+
+function StyleTranslator.ApplyEffects(guiObject: GuiObject, node: any): ImageLabel?
+	local effects = node.effects or node.effect
+	if not effects or type(effects) ~= "table" then return nil end
+	if not effects[1] and (effects.type or effects.color) then effects = { effects } end
+	
+	for _, effect in ipairs(effects) do
+		if type(effect) == "table" and effect.visible ~= false and effect.type == "DROP_SHADOW" then
+			local sColor, sTrans = StyleTranslator.ToColor3(effect.color)
+			local offX = tonumber(effect.offset and effect.offset.x) or 0
+			local offY = tonumber(effect.offset and effect.offset.y) or 4
+			local radius = math.max(tonumber(effect.radius) or 8, 4)
+			local spread = tonumber(effect.spread) or 0
+			
+			local shadow = Instance.new("ImageLabel")
+			shadow.Name = "FigmaDropShadow"
+			shadow.BackgroundTransparency = 1
+			shadow.BorderSizePixel = 0
+			shadow.Image = SHADOW_ASSET
+			shadow.ScaleType = Enum.ScaleType.Slice
+			shadow.SliceCenter = SHADOW_RECT
+			shadow.ImageColor3 = sColor
+			shadow.ImageTransparency = math.clamp(sTrans, 0, 0.95)
+			
+			local extra = (radius + spread) * 2
+			shadow.Size = UDim2.new(1, extra, 1, extra)
+			shadow.Position = UDim2.new(0.5, offX, 0.5, offY)
+			shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+			shadow.ZIndex = math.max(guiObject.ZIndex - 1, 1)
+			shadow.Parent = guiObject
+			return shadow
+		end
+	end
+	return nil
 end
 
 function StyleTranslator.ApplyCorners(guiObject: GuiObject, node: any): UICorner?
@@ -491,7 +582,7 @@ function StyleTranslator.ApplyStrokes(guiObject: GuiObject, node: any): UIStroke
 		uiStroke.Color = strokeColor
 		uiStroke.Thickness = math.max(1, math.round(weight))
 		uiStroke.Transparency = strokeTrans
-		uiStroke.ApplyStrokeMode = if guiObject:IsA("TextLabel") then Enum.ApplyStrokeMode.Contextual else Enum.ApplyStrokeMode.Border
+		uiStroke.ApplyStrokeMode = if guiObject:IsA("TextLabel") or guiObject:IsA("TextBox") then Enum.ApplyStrokeMode.Contextual else Enum.ApplyStrokeMode.Border
 		uiStroke.Parent = guiObject
 		return uiStroke
 	end
@@ -539,25 +630,55 @@ function LayoutTranslator.CalculateTransform(node: any, parentRect: any?, option
 		relY = rawY or 0
 	end
 	
+	local sizingH = string.upper(tostring(node.layoutSizingHorizontal or "FIXED"))
+	local sizingV = string.upper(tostring(node.layoutSizingVertical or "FIXED"))
 	local mode = if type(options) == "table" and options.sizingMode then options.sizingMode else "ResponsiveScale"
+	
+	local sizeScaleX = if sizingH == "FILL" then 1 else (width / parentWidth)
+	local sizeOffsetX = if sizingH == "HUG" then 0 elseif sizingH == "FILL" then 0 else math.round(width)
+	local sizeScaleY = if sizingV == "FILL" then 1 else (height / parentHeight)
+	local sizeOffsetY = if sizingV == "HUG" then 0 elseif sizingV == "FILL" then 0 else math.round(height)
+	
 	local position: UDim2
 	local size: UDim2
 	
 	if mode == "ResponsiveScale" then
 		position = UDim2.new(relX / parentWidth, 0, relY / parentHeight, 0)
-		size = UDim2.new(width / parentWidth, 0, height / parentHeight, 0)
+		size = if (sizingH == "HUG" or sizingV == "HUG")
+			then UDim2.new(if sizingH == "HUG" then 0 else sizeScaleX, 0, if sizingV == "HUG" then 0 else sizeScaleY, 0)
+			else UDim2.new(sizeScaleX, 0, sizeScaleY, 0)
 	elseif mode == "ExactOffset" then
 		position = UDim2.new(0, math.round(relX), 0, math.round(relY))
-		size = UDim2.new(0, math.round(width), 0, math.round(height))
+		size = UDim2.new(if sizingH == "FILL" then 1 else 0, sizeOffsetX, if sizingV == "FILL" then 1 else 0, sizeOffsetY)
 	else
 		position = UDim2.new(relX / parentWidth, 0, relY / parentHeight, 0)
-		size = UDim2.new(0, math.round(width), 0, math.round(height))
+		size = UDim2.new(if sizingH == "FILL" then 1 else 0, sizeOffsetX, if sizingV == "FILL" then 1 else 0, sizeOffsetY)
 	end
 	
 	return position, size, Vector2.new(0, 0)
 end
 
 function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
+	local sizingH = string.upper(tostring(node.layoutSizingHorizontal or ""))
+	local sizingV = string.upper(tostring(node.layoutSizingVertical or ""))
+	
+	if sizingH == "HUG" and sizingV == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.XY
+	elseif sizingH == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.X
+	elseif sizingV == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.Y
+	end
+	
+	if sizingH == "FILL" or sizingV == "FILL" then
+		pcall(function()
+			local flex = Instance.new("UIFlexItem")
+			flex.Name = "FigmaFlexItem"
+			flex.FlexMode = (Enum :: any).UIFlexMode.Fill
+			flex.Parent = guiObject
+		end)
+	end
+	
 	local layoutMode = node.layoutMode
 	if not layoutMode or layoutMode == "NONE" then
 		return
@@ -566,18 +687,33 @@ function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.Name = "FigmaListLayout"
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	listLayout.FillDirection = if layoutMode == "HORIZONTAL" then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
+	local isHoriz = (layoutMode == "HORIZONTAL")
+	listLayout.FillDirection = if isHoriz then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
 	listLayout.Padding = UDim.new(0, math.round(node.itemSpacing or 0))
 	
-	local primaryAlign = node.primaryAxisAlignItems or "MIN"
-	local counterAlign = node.counterAxisAlignItems or "MIN"
+	local primaryAlign = string.upper(tostring(node.primaryAxisAlignItems or "MIN"))
+	local counterAlign = string.upper(tostring(node.counterAxisAlignItems or "MIN"))
 	
-	if layoutMode == "HORIZONTAL" then
-		listLayout.HorizontalAlignment = if primaryAlign == "CENTER" then Enum.HorizontalAlignment.Center elseif primaryAlign == "MAX" then Enum.HorizontalAlignment.Right else Enum.HorizontalAlignment.Left
-		listLayout.VerticalAlignment = if counterAlign == "CENTER" then Enum.VerticalAlignment.Center elseif counterAlign == "MAX" then Enum.VerticalAlignment.Bottom else Enum.VerticalAlignment.Top
+	if isHoriz then
+		if primaryAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		elseif primaryAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		elseif primaryAlign == "SPACE_BETWEEN" then
+			pcall(function() (listLayout :: any).HorizontalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
+		else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+		
+		if counterAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+		elseif counterAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
 	else
-		listLayout.VerticalAlignment = if primaryAlign == "CENTER" then Enum.VerticalAlignment.Center elseif primaryAlign == "MAX" then Enum.VerticalAlignment.Bottom else Enum.VerticalAlignment.Top
-		listLayout.HorizontalAlignment = if counterAlign == "CENTER" then Enum.HorizontalAlignment.Center elseif counterAlign == "MAX" then Enum.HorizontalAlignment.Right else Enum.HorizontalAlignment.Left
+		if primaryAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+		elseif primaryAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		elseif primaryAlign == "SPACE_BETWEEN" then
+			pcall(function() (listLayout :: any).VerticalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
+		else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
+		
+		if counterAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		elseif counterAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
 	end
 	listLayout.Parent = guiObject
 	
@@ -619,9 +755,7 @@ local FONT_MAP = {
 }
 
 function TextTranslator.ResolveFont(style: any?): Enum.Font
-	if not style then
-		return Config.UI.Font
-	end
+	if not style then return Config.UI.Font end
 	local fam = string.lower(string.gsub(tostring(style.fontFamily or style.font or "buildersans"), "%s+", ""))
 	local weight = tonumber(style.fontWeight or style.weight or 400) or 400
 	if FONT_MAP[fam] then
@@ -672,21 +806,54 @@ end
 
 local InstanceGenerator = {}
 
-local function resolveNodeType(node: any): string
+local function isImageOrVector(node: any): boolean
 	local t = string.upper(tostring(node.type or node.nodeType or node.kind or node.tag or ""))
-	if t == "TEXT" or (node.characters ~= nil and tostring(node.characters) ~= "") or (node.text ~= nil and tostring(node.text) ~= "") then
-		return "TEXT"
-	end
-	if t == "VECTOR" or t == "ELLIPSE" or t == "STAR" or t == "POLYGON" or t == "LINE" or t == "IMAGE" then
-		return "IMAGE"
+	if t == "VECTOR" or t == "ELLIPSE" or t == "STAR" or t == "POLYGON" or t == "LINE" or t == "IMAGE" or node.isVector == true then
+		return true
 	end
 	local fills = node.fills or node.fill
 	if fills and type(fills) == "table" then
-		if fills.type and string.upper(tostring(fills.type)) == "IMAGE" then return "IMAGE" end
-		for _, f in ipairs(fills) do
-			if type(f) == "table" and string.upper(tostring(f.type or "")) == "IMAGE" then return "IMAGE" end
+		if fills.type and string.upper(tostring(fills.type)) == "IMAGE" then return true end
+		for _, fill in ipairs(fills) do
+			if type(fill) == "table" and string.upper(tostring(fill.type or "")) == "IMAGE" then return true end
 		end
 	end
+	return false
+end
+
+local function resolveInstanceType(node: any): string
+	local name = string.lower(tostring(node.name or ""))
+	local t = string.upper(tostring(node.type or node.nodeType or node.kind or node.tag or ""))
+	local role = string.upper(tostring(node.role or ""))
+	
+	local isBtn = node.isButton == true or role == "BUTTON"
+		or name:match("^btn") or name:match("button$") or name:match("_btn") or name:match("%-btn")
+		or name:match("cta") or name:match("actionbutton") or name:match("submit") or name:match("closebtn")
+	
+	if isBtn then
+		if isImageOrVector(node) and not (node.characters ~= nil or node.text ~= nil) then
+			return "BUTTON_IMAGE"
+		else
+			return "BUTTON_TEXT"
+		end
+	end
+	
+	local isInput = node.isInput == true or role == "INPUT"
+		or name:match("input") or name:match("textbox") or name:match("textfield")
+		or name:match("searchbar") or name:match("search") or name:match("field")
+	
+	if isInput and t ~= "TEXT" then
+		return "TEXT_BOX"
+	end
+	
+	if t == "TEXT" or (node.characters ~= nil and tostring(node.characters) ~= "") or (node.text ~= nil and tostring(node.text) ~= "") then
+		return "TEXT_LABEL"
+	end
+	
+	if isImageOrVector(node) then
+		return "IMAGE_LABEL"
+	end
+	
 	return "FRAME"
 end
 
@@ -695,15 +862,50 @@ local function buildHierarchy(node: any, parent: Instance, parentRect: any?, sta
 		return nil
 	end
 	
-	local resolvedType = resolveNodeType(node)
+	local instType = resolveInstanceType(node)
 	local gui: GuiObject
 	
-	if resolvedType == "TEXT" then
+	if instType == "BUTTON_TEXT" then
+		local btn = Instance.new("TextButton")
+		btn.AutoButtonColor = true
+		btn.Text = ""
+		btn.ClipsDescendants = node.clipsContent or false
+		StyleTranslator.ApplyBackground(btn, node)
+		gui = btn
+		stats.Buttons += 1
+	elseif instType == "BUTTON_IMAGE" then
+		local btn = Instance.new("ImageButton")
+		btn.AutoButtonColor = true
+		btn.BackgroundTransparency = 1
+		btn.BorderSizePixel = 0
+		btn.ScaleType = Enum.ScaleType.Fit
+		StyleTranslator.ApplyBackground(btn, node)
+		gui = btn
+		stats.Buttons += 1
+	elseif instType == "TEXT_BOX" then
+		local tb = Instance.new("TextBox")
+		tb.ClearTextOnFocus = false
+		tb.ClipsDescendants = false
+		tb.AutoLocalize = false
+		local rawText = tostring(node.characters or node.text or node.placeholder or "")
+		if rawText ~= "" and (rawText:lower():match("^enter") or rawText:lower():match("^search") or rawText:lower():match("^type") or rawText:lower():match("^your")) then
+			tb.PlaceholderText = rawText
+			tb.Text = ""
+		else
+			tb.Text = rawText
+			tb.PlaceholderText = "Type here..."
+		end
+		tb.PlaceholderColor3 = Color3.fromRGB(160, 160, 160)
+		TextTranslator.ApplyText(tb :: any, node)
+		StyleTranslator.ApplyBackground(tb, node)
+		gui = tb
+		stats.TextBoxes += 1
+	elseif instType == "TEXT_LABEL" then
 		local label = Instance.new("TextLabel")
 		TextTranslator.ApplyText(label, node)
 		gui = label
 		stats.TextLabels += 1
-	elseif resolvedType == "IMAGE" then
+	elseif instType == "IMAGE_LABEL" then
 		local img = Instance.new("ImageLabel")
 		img.BackgroundTransparency = 1
 		img.ScaleType = Enum.ScaleType.Fit
@@ -725,6 +927,7 @@ local function buildHierarchy(node: any, parent: Instance, parentRect: any?, sta
 	
 	if StyleTranslator.ApplyCorners(gui, node) then stats.Corners += 1 end
 	if StyleTranslator.ApplyStrokes(gui, node) then stats.Strokes += 1 end
+	if StyleTranslator.ApplyEffects(gui, node) then stats.Shadows += 1 end
 	LayoutTranslator.ApplyAutoLayout(gui, node)
 	if node.layoutMode and node.layoutMode ~= "NONE" then stats.Layouts += 1 end
 	
@@ -744,7 +947,7 @@ local function buildHierarchy(node: any, parent: Instance, parentRect: any?, sta
 end
 
 function InstanceGenerator.Generate(root: any, target: Instance, options: any): (GuiObject?, any)
-	local stats = { Total = 0, Frames = 0, TextLabels = 0, ImageLabels = 0, Corners = 0, Strokes = 0, Layouts = 0 }
+	local stats = { Total = 0, Frames = 0, TextLabels = 0, ImageLabels = 0, Buttons = 0, TextBoxes = 0, Corners = 0, Strokes = 0, Shadows = 0, Layouts = 0 }
 	local rootGui = buildHierarchy(root, target, nil, stats, options or { sizingMode = "ResponsiveScale" })
 	return rootGui, stats
 end
@@ -1119,8 +1322,8 @@ generateButton.MouseButton1Click:Connect(function()
 		Selection:Set({ screenGui })
 		
 		print(string.format(
-			"[FigmaToRoblox] Generated '%s' in StarterGui (%d Instances: %d Frames, %d TextLabels, %d Images, %d Corners, %d Strokes, %d Layouts)",
-			screenGuiName, stats.Total, stats.Frames, stats.TextLabels, stats.ImageLabels, stats.Corners, stats.Strokes, stats.Layouts
+			"[FigmaToRoblox] Generated '%s' in StarterGui (%d Instances: %d Frames, %d Buttons, %d TextBoxes, %d TextLabels, %d Images, %d Shadows, %d Corners, %d Strokes, %d Layouts)",
+			screenGuiName, stats.Total, stats.Frames, stats.Buttons, stats.TextBoxes, stats.TextLabels, stats.ImageLabels, stats.Shadows, stats.Corners, stats.Strokes, stats.Layouts
 		))
 	end)
 	
@@ -1135,7 +1338,10 @@ generateButton.MouseButton1Click:Connect(function()
 	end
 	
 	if genSuccess and statsResult then
-		setStatus(string.format("✓ Generated '%s' (%d elements: %d text, %d img)!", rootNode.name, statsResult.Total, statsResult.TextLabels, statsResult.ImageLabels), "success")
+		setStatus(
+			string.format("✓ Generated '%s' (%d elements: %d buttons, %d shadows, %d text)!", rootNode.name, statsResult.Total, statsResult.Buttons, statsResult.Shadows, statsResult.TextLabels),
+			"success"
+		)
 	else
 		setStatus(string.format("Generation error: %s", tostring(genErr)), "error")
 	end

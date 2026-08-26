@@ -10,7 +10,7 @@ A complete bidirectional workflow to export UI designs from **Figma** and genera
 figma-to-roblox-plugin/
 ├── figma-companion-plugin/         # Figma Desktop Plugin (1-Click JSON Exporter)
 │   ├── manifest.json               # Figma plugin manifest
-│   ├── code.js                     # Extraction logic (Colors, Frames, AutoLayout, Text, Strokes)
+│   ├── code.js                     # Extraction logic (AutoLayout, Effects, Gradients, Roles, Vectors)
 │   ├── ui.html                     # Clean UI with 'Copy JSON for Roblox' button
 │   └── README.md                   # Installation & usage instructions
 │
@@ -25,10 +25,10 @@ figma-to-roblox-plugin/
             ├── ThemeManager.lua    # Studio Light/Dark theme adaptation
             ├── PluginUI.lua        # DockWidget interface & status bar
             ├── JsonParser.lua      # Multi-format JSON decoder & schema normalizer
-            ├── LayoutTranslator.lua# UDim2 positioning, responsive scale & AutoLayout
-            ├── StyleTranslator.lua # Colors, backgroundColor, UICorner & UIStroke
+            ├── LayoutTranslator.lua# AutoLayout (HUG/FILL/SpaceBetween), UDim2 & UIPadding
+            ├── StyleTranslator.lua # Drop Shadows, Multi-stop UIGradients, UICorner & UIStroke
             ├── TextTranslator.lua  # Font matching, sizes, alignments & text wrapping
-            └── InstanceGenerator.lua# Recursive tree traversal & instance generator
+            └── InstanceGenerator.lua# Recursive tree traversal & interactive controls generator
 ```
 
 ---
@@ -39,7 +39,7 @@ figma-to-roblox-plugin/
 1. In the **Figma Desktop App**, open your design file.
 2. Go to **Plugins** $\rightarrow$ **Development** $\rightarrow$ **Import plugin from manifest...**.
 3. Select `figma-companion-plugin/manifest.json`.
-4. Select your UI frame (e.g. `Frame 1`) and click **"📋 Copy JSON for Roblox"**.
+4. Select your UI frame (e.g. `Frame 1` or `TextButton`) and click **"📋 Copy JSON for Roblox"**.
 
 ### Step 2: Import into Roblox Studio
 1. Open your place in **Roblox Studio**.
@@ -51,6 +51,21 @@ figma-to-roblox-plugin/
 ---
 
 ## 📝 Changelog
+
+### `v0.0.2`
+- **Interactive Controls Support:**
+  - Automatically identifies and converts button layers (`Button`, `Btn`, `CTA`, `ActionButton`) to native, clickable Roblox `TextButton` and `ImageButton` instances with `AutoButtonColor = true`.
+  - Automatically detects text inputs (`Input`, `TextBox`, `TextField`, `Search`) and converts them to functional Roblox `TextBox` instances with placeholder text and left alignment.
+- **AutoLayout & Responsive Flex Engine:**
+  - `HUG` contents mapped to Roblox `AutomaticSize = Enum.AutomaticSize.XY / X / Y`.
+  - `FILL` container mapped to `UIFlexItem` (`FlexMode.Fill`) and responsive percentage sizing.
+  - `SPACE_BETWEEN` alignments mapped to `UIListLayout.HorizontalFlex` / `VerticalFlex`.
+  - Accurate `UIPadding` and gap spacing translation.
+- **Advanced Visual Effects:**
+  - Drop Shadows: translates Figma `effects: DROP_SHADOW` into soft 9-slice drop shadow overlays.
+  - Multi-Stop Gradients: translates linear gradients with multi-color keypoints, transparency sequences, and calculated rotation angles to `UIGradient`.
+- **Vector & Asset Metadata:**
+  - Enhanced Figma companion exporter to detect vector graphics, SVG icons, and component roles (`BUTTON`, `INPUT`, `ICON`, `CARD`).
 
 ### `v0.0.1`
 - **Description:** Can import some simple UI but still can't import Figma details components.

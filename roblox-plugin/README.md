@@ -18,36 +18,39 @@ roblox-plugin/
         ├── ThemeManager.lua        # Dynamic Studio Light / Dark theme color adapter
         ├── PluginUI.lua            # DockWidget interface (Input, status bar, action buttons)
         ├── JsonParser.lua          # Safe JSON decoder, normalizer, and schema validator
-        ├── LayoutTranslator.lua    # UDim2 positioning, responsive scale & AutoLayout
-        ├── StyleTranslator.lua     # Colors, backgroundColor, UICorner & UIStroke
+        ├── LayoutTranslator.lua    # AutoLayout (HUG/FILL/SpaceBetween), UDim2 & UIPadding
+        ├── StyleTranslator.lua     # Drop Shadows, Multi-stop UIGradients, UICorner & UIStroke
         ├── TextTranslator.lua      # Font matching, sizes, alignments & text wrapping
-        └── InstanceGenerator.lua   # Recursive tree traversal & instance generator
+        └── InstanceGenerator.lua   # Recursive tree traversal & interactive controls generator
 ```
 
 ---
 
 ## 🛠️ Features & Components
 
-### 1. Plugin Lifecycle & DockWidget (`init.server.lua`)
-- Creates a dedicated Toolbar item and Action Button under Studio's **Plugins** tab.
-- Initializes a `DockWidgetPluginGui` with saved state and docking support.
-- Implements `ChangeHistoryService` recording (`TryBeginRecording` / `FinishRecording`) so generated UI hierarchies are fully undoable/redoable in Studio.
-- Auto-selects the generated `ScreenGui` in `StarterGui` via `Selection:Set()`.
+### 1. Interactive Controls Engine (`InstanceGenerator.lua`)
+- **`TextButton` & `ImageButton`**: Converts button layers to native, clickable Roblox buttons with `AutoButtonColor = true`.
+- **`TextBox`**: Converts input fields to functional `TextBox` instances with placeholder text.
 
-### 2. Studio Theme Engine (`ThemeManager.lua`)
-- Integrates with `settings().Studio.Theme` to retrieve native Studio style guide colors.
-- Automatically listens to `settings().Studio.ThemeChanged` to adapt all UI elements on-the-fly when switching between Dark and Light mode.
+### 2. AutoLayout & Responsive Flex Engine (`LayoutTranslator.lua`)
+- **`HUG` Sizing**: Maps to `AutomaticSize = Enum.AutomaticSize.XY / X / Y` so components dynamically expand with content.
+- **`FILL` Container**: Maps to `UIFlexItem` with `FlexMode.Fill` and percentage scale.
+- **`SPACE_BETWEEN`**: Translates Figma spacing to `UIListLayout.HorizontalFlex` / `VerticalFlex`.
+- **`UIPadding`**: Applies precise top, bottom, left, and right padding.
 
-### 3. Multi-Line JSON Input Interface (`PluginUI.lua`)
-- Modern, clean layout with rounded corners (`UICorner`) and outline strokes (`UIStroke`).
-- Action row with **Load Sample** (loads valid test JSON) and **Clear** buttons.
-- Multi-line, scrollable `TextBox` with clear placeholder directions.
-- Live Status / Feedback Bar with colored indicators for parsing, validating, and errors.
-- Prominent **⚡ Generate UI in StarterGui** button with hover micro-interactions.
+### 3. Advanced Visuals Engine (`StyleTranslator.lua`)
+- **Drop Shadows**: Generates realistic 9-slice soft drop shadow overlays (`ImageLabel`) from Figma `effects: DROP_SHADOW`.
+- **Multi-Stop Gradients**: Converts linear gradients with multiple color keypoints, transparency sequences, and calculated rotation angles to native `UIGradient`.
 
 ---
 
 ## 📝 Changelog
+
+### `v0.0.2`
+- Added automatic detection and generation for interactive `TextButton`, `ImageButton`, and `TextBox` instances.
+- Added AutoLayout sizing modes (`HUG`, `FILL`, `FIXED`, `AutomaticSize`, `UIFlexItem`).
+- Added drop shadows via 9-slice overlays (`effects: DROP_SHADOW`).
+- Added multi-stop `UIGradient` sequences with angle calculation.
 
 ### `v0.0.1`
 - **Description:** Can import some simple UI but still can't import Figma details components.

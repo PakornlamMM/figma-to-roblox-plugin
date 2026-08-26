@@ -1,8 +1,8 @@
 --!strict
 --[[
 	StyleTranslator.lua
-	Converts Figma colors, fills, gradients, corner radii, and strokes into Roblox UI styling instances.
-	Supports backgroundColor on frames, fills array, 0-1 and 0-255 scales, and hex strings.
+	Converts Figma colors, fills, multi-stop gradients, drop shadows, corner radii,
+	and strokes into native Roblox UI styling instances.
 ]]
 
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -12,6 +12,10 @@ type FigmaColor = Types.FigmaColor
 type FigmaPaint = Types.FigmaPaint
 
 local StyleTranslator = {}
+
+-- Standard high-fidelity 9-slice soft drop shadow asset
+local SHADOW_ASSET_ID = "rbxassetid://1316045217"
+local SHADOW_SLICE_CENTER = Rect.new(10, 10, 118, 118)
 
 --[[
 	Converts any Figma color representation (0-1, 0-255, Hex string, table) to Color3 and transparency.
@@ -43,9 +47,7 @@ function StyleTranslator.ToColor3(figmaColor: any?): (Color3, number)
 		local rawB = tonumber(figmaColor.b or figmaColor.blue or figmaColor[3]) or 0
 		local rawA = figmaColor.a or figmaColor.alpha or figmaColor.opacity or figmaColor[4]
 		
-		-- Detect 0-255 vs 0-1 scale
 		local is255 = (rawR > 1 or rawG > 1 or rawB > 1)
-		
 		local r = if is255 then math.clamp(rawR / 255, 0, 1) else math.clamp(rawR, 0, 1)
 		local g = if is255 then math.clamp(rawG / 255, 0, 1) else math.clamp(rawG, 0, 1)
 		local b = if is255 then math.clamp(rawB / 255, 0, 1) else math.clamp(rawB, 0, 1)
@@ -64,12 +66,10 @@ end
 
 --[[
 	Extracts the primary visible paint fill from a Figma node.
-	Checks fills array, backgroundColor, and direct color properties.
 ]]
 function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
 	
-	-- 1. Check fills array
 	local fills = node.fills or node.fill
 	if fills then
 		if type(fills) == "table" and (fills.color or fills.r or fills.type == "SOLID") and not fills[1] then
@@ -101,7 +101,6 @@ function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 		end
 	end
 	
-	-- 2. Check backgroundColor (Crucial for Figma Frames!)
 	local bg = node.backgroundColor or node.bgColor or node.background
 	if bg then
 		local color3, colorTrans = StyleTranslator.ToColor3(bg)
@@ -109,7 +108,6 @@ function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 		return color3, math.clamp(1 - effectiveAlpha, 0, 1)
 	end
 	
-	-- 3. Check direct color on node
 	if node.color and type(node.color) == "table" and (node.color.r or node.color[1]) then
 		local color3, colorTrans = StyleTranslator.ToColor3(node.color)
 		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1)
@@ -119,7 +117,7 @@ function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 end
 
 --[[
-	Applies background color, transparency, and gradients to a GuiObject.
+	Applies background color, transparency, and multi-stop UIGradient to a GuiObject.
 ]]
 function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
 	local color, transparency = StyleTranslator.GetPrimaryFill(node)
@@ -137,28 +135,91 @@ function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
 		guiObject.ClipsDescendants = node.clipsContent
 	end
 	
-	-- Linear Gradient fill
+	-- Multi-stop Linear Gradient fill
 	local fills = node.fills or node.fill
 	if fills and type(fills) == "table" then
 		for _, fill in ipairs(fills) do
 			if type(fill) == "table" and fill.visible ~= false and fill.type == "GRADIENT_LINEAR" and fill.gradientStops then
 				local colorKeypoints = {}
+				local transKeypoints = {}
+				
 				for _, stop in ipairs(fill.gradientStops) do
-					local stopColor = StyleTranslator.ToColor3(stop.color)
+					local stopColor, stopTrans = StyleTranslator.ToColor3(stop.color)
 					local pos = math.clamp(stop.position or 0, 0, 1)
 					table.insert(colorKeypoints, ColorSequenceKeypoint.new(pos, stopColor))
+					table.insert(transKeypoints, NumberSequenceKeypoint.new(pos, stopTrans))
 				end
 				
 				if #colorKeypoints >= 2 then
 					local gradient = Instance.new("UIGradient")
 					gradient.Name = "FigmaGradient"
 					gradient.Color = ColorSequence.new(colorKeypoints)
+					
+					if #transKeypoints >= 2 then
+						gradient.Transparency = NumberSequence.new(transKeypoints)
+					end
+					
+					-- Compute gradient angle
+					if fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
+						local p0 = fill.gradientHandlePositions[1]
+						local p1 = fill.gradientHandlePositions[2]
+						local dx = (p1.x or 0) - (p0.x or 0)
+						local dy = (p1.y or 0) - (p0.y or 0)
+						local angle = math.deg(math.atan2(dy, dx))
+						gradient.Rotation = math.round(angle)
+					end
+					
 					gradient.Parent = guiObject
 				end
 				break
 			end
 		end
 	end
+end
+
+--[[
+	Applies soft Drop Shadow overlay from Figma effects.
+]]
+function StyleTranslator.ApplyEffects(guiObject: GuiObject, node: any): ImageLabel?
+	local effects = node.effects or node.effect
+	if not effects or type(effects) ~= "table" then
+		return nil
+	end
+	
+	if not effects[1] and (effects.type or effects.color) then
+		effects = { effects }
+	end
+	
+	for _, effect in ipairs(effects) do
+		if type(effect) == "table" and effect.visible ~= false and effect.type == "DROP_SHADOW" then
+			local shadowColor, shadowTrans = StyleTranslator.ToColor3(effect.color)
+			local offset = effect.offset or { x = 0, y = 4 }
+			local offX = tonumber(offset.x) or 0
+			local offY = tonumber(offset.y) or 4
+			local radius = math.max(tonumber(effect.radius) or 8, 4)
+			local spread = tonumber(effect.spread) or 0
+			
+			local shadow = Instance.new("ImageLabel")
+			shadow.Name = "FigmaDropShadow"
+			shadow.BackgroundTransparency = 1
+			shadow.BorderSizePixel = 0
+			shadow.Image = SHADOW_ASSET_ID
+			shadow.ScaleType = Enum.ScaleType.Slice
+			shadow.SliceCenter = SHADOW_SLICE_CENTER
+			shadow.ImageColor3 = shadowColor
+			shadow.ImageTransparency = math.clamp(shadowTrans, 0, 0.95)
+			
+			local extra = (radius + spread) * 2
+			shadow.Size = UDim2.new(1, extra, 1, extra)
+			shadow.Position = UDim2.new(0.5, offX, 0.5, offY)
+			shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+			shadow.ZIndex = math.max(guiObject.ZIndex - 1, 1)
+			shadow.Parent = guiObject
+			return shadow
+		end
+	end
+	
+	return nil
 end
 
 --[[
@@ -236,7 +297,7 @@ function StyleTranslator.ApplyStrokes(guiObject: GuiObject, node: any): UIStroke
 		uiStroke.Thickness = math.max(1, math.round(weight))
 		uiStroke.Transparency = strokeTrans
 		
-		if guiObject:IsA("TextLabel") or guiObject:IsA("TextButton") then
+		if guiObject:IsA("TextLabel") or guiObject:IsA("TextBox") then
 			uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 		else
 			uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border

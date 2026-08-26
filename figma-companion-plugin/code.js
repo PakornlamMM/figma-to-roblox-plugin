@@ -1,5 +1,6 @@
-// Figma to Roblox JSON Exporter - Plugin Code
-figma.showUI(__html__, { width: 340, height: 260 });
+// Figma to Roblox JSON Exporter - Plugin Code v0.0.2
+// Supports AutoLayout (HUG/FILL), Drop Shadows, Multi-Stop Gradients, Interactive Controls, and Vectors.
+figma.showUI(__html__, { width: 360, height: 290 });
 
 // Helper to convert paint array to serializable JSON
 function serializePaints(paints) {
@@ -25,20 +26,82 @@ function serializePaints(paints) {
           r: stop.color.r,
           g: stop.color.g,
           b: stop.color.b,
-          a: stop.color.a,
+          a: typeof stop.color.a === 'number' ? stop.color.a : 1,
         },
       }));
+    }
+    if (paint.gradientTransform) {
+      item.gradientTransform = paint.gradientTransform;
+    }
+    if (paint.gradientHandlePositions) {
+      item.gradientHandlePositions = paint.gradientHandlePositions;
     }
     return item;
   });
 }
 
+// Helper to serialize effects (Drop Shadow, Inner Shadow, Blur)
+function serializeEffects(effects) {
+  if (!effects || !Array.isArray(effects)) return [];
+  return effects.map(effect => {
+    const item = {
+      type: effect.type, // "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"
+      visible: effect.visible !== false,
+      radius: effect.radius || 0,
+    };
+    if (effect.color) {
+      item.color = {
+        r: effect.color.r,
+        g: effect.color.g,
+        b: effect.color.b,
+        a: typeof effect.color.a === 'number' ? effect.color.a : 1,
+      };
+    }
+    if (effect.offset) {
+      item.offset = {
+        x: effect.offset.x || 0,
+        y: effect.offset.y || 0,
+      };
+    }
+    if (effect.spread !== undefined) {
+      item.spread = effect.spread;
+    }
+    return item;
+  });
+}
+
+// Detect component semantic role from naming and structure
+function detectRole(node) {
+  const name = node.name.toLowerCase();
+  
+  if (name.match(/\b(button|btn|cta|primarybtn|secondarybtn|actionbutton|textbutton|imagebutton)\b/i) || name.includes('btn') || name.includes('button')) {
+    return 'BUTTON';
+  }
+  if (name.match(/\b(input|textbox|textfield|search|searchbar|textinput|field|entry)\b/i) || name.includes('input') || name.includes('textfield')) {
+    return 'INPUT';
+  }
+  if (name.match(/\b(icon|badge|avatar|symbol|logo|vector|graphic|illustration)\b/i)) {
+    return 'ICON';
+  }
+  if (name.match(/\b(card|panel|modal|dialog|window|container|popup|frame)\b/i)) {
+    return 'CARD';
+  }
+  return 'GENERIC';
+}
+
 // Recursively traverse and extract node data
-function exportNode(node) {
+async function exportNode(node) {
+  const role = detectRole(node);
+  const isVector = node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION' || node.type === 'STAR' || node.type === 'POLYGON' || node.type === 'LINE' || node.type === 'ELLIPSE';
+  
   const data = {
     id: node.id,
     name: node.name,
     type: node.type,
+    role: role,
+    isVector: isVector,
+    isButton: role === 'BUTTON',
+    isInput: role === 'INPUT',
     visible: node.visible !== false,
     opacity: typeof node.opacity === 'number' ? node.opacity : 1,
     x: node.x,
@@ -73,6 +136,11 @@ function exportNode(node) {
     data.strokeAlign = node.strokeAlign || 'INSIDE';
   }
 
+  // Effects (Drop Shadows & Blurs)
+  if (node.effects && node.effects.length > 0) {
+    data.effects = serializeEffects(node.effects);
+  }
+
   // Corner Radii
   if (typeof node.cornerRadius === 'number') {
     data.cornerRadius = node.cornerRadius;
@@ -95,6 +163,15 @@ function exportNode(node) {
     data.paddingRight = node.paddingRight || 0;
     data.paddingTop = node.paddingTop || 0;
     data.paddingBottom = node.paddingBottom || 0;
+    data.layoutWrap = node.layoutWrap || 'NO_WRAP';
+  }
+
+  // Sizing mode (HUG / FIXED / FILL)
+  if (node.layoutSizingHorizontal) {
+    data.layoutSizingHorizontal = node.layoutSizingHorizontal; // "FIXED", "HUG", "FILL"
+  }
+  if (node.layoutSizingVertical) {
+    data.layoutSizingVertical = node.layoutSizingVertical;
   }
 
   // Text Properties
@@ -111,20 +188,36 @@ function exportNode(node) {
     };
   }
 
+  // Export SVG content if it's a vector shape or icon
+  if (isVector && typeof node.exportAsync === 'function') {
+    try {
+      const svgBytes = await node.exportAsync({ format: 'SVG_STRING' });
+      if (svgBytes) {
+        data.svg = svgBytes;
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
   if (node.clipsContent !== undefined) {
     data.clipsContent = node.clipsContent;
   }
 
   // Children
   if (node.children && node.children.length > 0) {
-    data.children = node.children.map(child => exportNode(child));
+    data.children = [];
+    for (const child of node.children) {
+      const childData = await exportNode(child);
+      data.children.push(childData);
+    }
   }
 
   return data;
 }
 
 // Listen for messages from UI
-figma.ui.onmessage = msg => {
+figma.ui.onmessage = async msg => {
   if (msg.type === 'export-selected') {
     const selection = figma.currentPage.selection;
     if (selection.length === 0) {
@@ -133,7 +226,7 @@ figma.ui.onmessage = msg => {
     }
 
     const rootNode = selection[0];
-    const exportedData = exportNode(rootNode);
+    const exportedData = await exportNode(rootNode);
     const jsonString = JSON.stringify(exportedData, null, 2);
 
     figma.ui.postMessage({

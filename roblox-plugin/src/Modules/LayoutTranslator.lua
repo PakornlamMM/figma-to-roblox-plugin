@@ -1,7 +1,8 @@
 --!strict
 --[[
 	LayoutTranslator.lua
-	Handles coordinate mapping, responsive UDim2 calculation, AnchorPoints, and Figma AutoLayout translation.
+	Handles coordinate mapping, responsive UDim2 calculation, AnchorPoints,
+	and AutoLayout (HUG, FILL, FIXED, SpaceBetween, UIPadding).
 ]]
 
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -14,6 +15,7 @@ local LayoutTranslator = {}
 
 --[[
 	Calculates UDim2 Position, Size, and Vector2 AnchorPoint for a node.
+	Respects AutoLayout sizing modes: HUG, FILL, and FIXED.
 ]]
 function LayoutTranslator.CalculateTransform(
 	node: any,
@@ -51,12 +53,10 @@ function LayoutTranslator.CalculateTransform(
 	local relY = 0
 	
 	if rawX ~= nil and parentX ~= nil then
-		-- Global canvas coordinates: rawX >= parentX and within reasonable proximity
 		if rawX >= parentX and (rawX - parentX) < (parentWidth * 2) then
 			relX = rawX - parentX
 			relY = (rawY or 0) - parentY
 		else
-			-- Already local relative offset
 			relX = rawX
 			relY = rawY or 0
 		end
@@ -65,31 +65,62 @@ function LayoutTranslator.CalculateTransform(
 		relY = rawY or 0
 	end
 	
+	local sizingH = string.upper(tostring(node.layoutSizingHorizontal or "FIXED"))
+	local sizingV = string.upper(tostring(node.layoutSizingVertical or "FIXED"))
+	
 	local mode = if type(options) == "table" and options.sizingMode then options.sizingMode else "ResponsiveScale"
 	local position: UDim2
 	local size: UDim2
 	
+	-- Sizing calculation
+	local sizeScaleX = if sizingH == "FILL" then 1 else (width / parentWidth)
+	local sizeOffsetX = if sizingH == "HUG" then 0 elseif sizingH == "FILL" then 0 else math.round(width)
+	
+	local sizeScaleY = if sizingV == "FILL" then 1 else (height / parentHeight)
+	local sizeOffsetY = if sizingV == "HUG" then 0 elseif sizingV == "FILL" then 0 else math.round(height)
+	
 	if mode == "ResponsiveScale" then
-		-- Responsive percentage of parent
 		position = UDim2.new(relX / parentWidth, 0, relY / parentHeight, 0)
-		size = UDim2.new(width / parentWidth, 0, height / parentHeight, 0)
+		size = if (sizingH == "HUG" or sizingV == "HUG")
+			then UDim2.new(if sizingH == "HUG" then 0 else sizeScaleX, if sizingH == "HUG" then 0 else 0, if sizingV == "HUG" then 0 else sizeScaleY, if sizingV == "HUG" then 0 else 0)
+			else UDim2.new(sizeScaleX, 0, sizeScaleY, 0)
 	elseif mode == "ExactOffset" then
-		-- Exact pixel dimensions
 		position = UDim2.new(0, math.round(relX), 0, math.round(relY))
-		size = UDim2.new(0, math.round(width), 0, math.round(height))
+		size = UDim2.new(if sizingH == "FILL" then 1 else 0, if sizingH == "FILL" then 0 else sizeOffsetX, if sizingV == "FILL" then 1 else 0, if sizingV == "FILL" then 0 else sizeOffsetY)
 	else
-		-- Hybrid: Position uses scale, size uses exact offset
 		position = UDim2.new(relX / parentWidth, 0, relY / parentHeight, 0)
-		size = UDim2.new(0, math.round(width), 0, math.round(height))
+		size = UDim2.new(if sizingH == "FILL" then 1 else 0, if sizingH == "FILL" then 0 else sizeOffsetX, if sizingV == "FILL" then 1 else 0, if sizingV == "FILL" then 0 else sizeOffsetY)
 	end
 	
 	return position, size, Vector2.new(0, 0)
 end
 
 --[[
-	Applies AutoLayout (UIListLayout or UIGridLayout) and UIPadding to a GuiObject.
+	Applies AutoLayout (UIListLayout, UIPadding, UIFlexItem, AutomaticSize) to a GuiObject.
 ]]
 function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
+	local sizingH = string.upper(tostring(node.layoutSizingHorizontal or ""))
+	local sizingV = string.upper(tostring(node.layoutSizingVertical or ""))
+	
+	-- Apply AutomaticSize if HUG is configured
+	if sizingH == "HUG" and sizingV == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.XY
+	elseif sizingH == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.X
+	elseif sizingV == "HUG" then
+		guiObject.AutomaticSize = Enum.AutomaticSize.Y
+	end
+	
+	-- Apply UIFlexItem if FILL is configured
+	if sizingH == "FILL" or sizingV == "FILL" then
+		pcall(function()
+			local flexItem = Instance.new("UIFlexItem")
+			flexItem.Name = "FigmaFlexItem"
+			flexItem.FlexMode = (Enum :: any).UIFlexMode.Fill
+			flexItem.Parent = guiObject
+		end)
+	end
+	
 	local layoutMode = node.layoutMode
 	if not layoutMode or layoutMode == "NONE" then
 		return
@@ -99,23 +130,25 @@ function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
 	listLayout.Name = "FigmaListLayout"
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	
-	if layoutMode == "HORIZONTAL" then
-		listLayout.FillDirection = Enum.FillDirection.Horizontal
-	else
-		listLayout.FillDirection = Enum.FillDirection.Vertical
-	end
+	local isHorizontal = (layoutMode == "HORIZONTAL")
+	listLayout.FillDirection = if isHorizontal then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
 	
 	local spacing = node.itemSpacing or 0
 	listLayout.Padding = UDim.new(0, math.round(spacing))
 	
-	local primaryAlign = node.primaryAxisAlignItems or "MIN"
-	local counterAlign = node.counterAxisAlignItems or "MIN"
+	local primaryAlign = string.upper(tostring(node.primaryAxisAlignItems or "MIN"))
+	local counterAlign = string.upper(tostring(node.counterAxisAlignItems or "MIN"))
 	
-	if layoutMode == "HORIZONTAL" then
+	-- Alignments
+	if isHorizontal then
 		if primaryAlign == "CENTER" then
 			listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		elseif primaryAlign == "MAX" then
 			listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		elseif primaryAlign == "SPACE_BETWEEN" then
+			pcall(function()
+				(listLayout :: any).HorizontalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween
+			end)
 		else
 			listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 		end
@@ -132,6 +165,10 @@ function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
 			listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 		elseif primaryAlign == "MAX" then
 			listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		elseif primaryAlign == "SPACE_BETWEEN" then
+			pcall(function()
+				(listLayout :: any).VerticalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween
+			end)
 		else
 			listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 		end
@@ -147,6 +184,7 @@ function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
 	
 	listLayout.Parent = guiObject
 	
+	-- UIPadding
 	local padLeft = node.paddingLeft or 0
 	local padRight = node.paddingRight or 0
 	local padTop = node.paddingTop or 0
