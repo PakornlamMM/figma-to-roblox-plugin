@@ -1,8 +1,8 @@
 --!strict
 --[[
 	StyleTranslator.lua
-	Converts Figma colors, fills, multi-stop gradients, drop shadows, corner radii,
-	and strokes into native Roblox UI styling instances.
+	Converts Figma colors, solid fills, vertical/horizontal/rainbow gradients,
+	drop shadows, corner radii (including stadium/pill buttons), and strokes into native Roblox UI styling instances.
 ]]
 
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -65,14 +65,140 @@ function StyleTranslator.ToColor3(figmaColor: any?): (Color3, number)
 end
 
 --[[
+	Safely builds a validated, sorted Roblox ColorSequence adhering to engine limits (0..1, <= 20 keypoints).
+]]
+local function buildColorSequence(stops: { any }): ColorSequence?
+	if not stops or #stops == 0 then
+		return nil
+	end
+	
+	local parsed = {}
+	for _, stop in ipairs(stops) do
+		if type(stop) == "table" then
+			local colorData = stop.color or stop
+			local stopColor, _ = StyleTranslator.ToColor3(colorData)
+			local rawPos = tonumber(stop.position or stop.pos or stop.offset or stop.location) or 0
+			table.insert(parsed, { Time = math.clamp(rawPos, 0, 1), Color = stopColor })
+		end
+	end
+	
+	if #parsed == 0 then
+		return nil
+	end
+	
+	-- Sort keypoints ascending by position
+	table.sort(parsed, function(a, b)
+		return a.Time < b.Time
+	end)
+	
+	-- Ensure distinct, strictly increasing positions (min step 0.001)
+	for i = 2, #parsed do
+		if parsed[i].Time <= parsed[i - 1].Time then
+			parsed[i].Time = math.min(1, parsed[i - 1].Time + 0.001)
+		end
+	end
+	
+	-- Ensure starting point at Time = 0
+	if parsed[1].Time > 0 then
+		table.insert(parsed, 1, { Time = 0, Color = parsed[1].Color })
+	end
+	
+	-- Ensure end point at Time = 1
+	if parsed[#parsed].Time < 1 then
+		table.insert(parsed, { Time = 1, Color = parsed[#parsed].Color })
+	end
+	
+	-- Cap at 20 keypoints (Roblox engine limit)
+	while #parsed > 20 do
+		table.remove(parsed, #parsed - 1)
+	end
+	
+	if #parsed < 2 then
+		return nil
+	end
+	
+	local keypoints = {}
+	for _, p in ipairs(parsed) do
+		table.insert(keypoints, ColorSequenceKeypoint.new(p.Time, p.Color))
+	end
+	
+	local success, seq = pcall(function()
+		return ColorSequence.new(keypoints)
+	end)
+	
+	return if success then seq else nil
+end
+
+--[[
+	Safely builds a validated, sorted Roblox NumberSequence for transparency.
+]]
+local function buildTransparencySequence(stops: { any }, nodeOpacity: number): NumberSequence?
+	if not stops or #stops == 0 then
+		return nil
+	end
+	
+	local parsed = {}
+	for _, stop in ipairs(stops) do
+		if type(stop) == "table" then
+			local colorData = stop.color or stop
+			local _, stopTrans = StyleTranslator.ToColor3(colorData)
+			local rawPos = tonumber(stop.position or stop.pos or stop.offset or stop.location) or 0
+			local effectiveTrans = math.clamp(1 - ((1 - stopTrans) * nodeOpacity), 0, 1)
+			table.insert(parsed, { Time = math.clamp(rawPos, 0, 1), Value = effectiveTrans })
+		end
+	end
+	
+	if #parsed == 0 then
+		return nil
+	end
+	
+	table.sort(parsed, function(a, b)
+		return a.Time < b.Time
+	end)
+	
+	for i = 2, #parsed do
+		if parsed[i].Time <= parsed[i - 1].Time then
+			parsed[i].Time = math.min(1, parsed[i - 1].Time + 0.001)
+		end
+	end
+	
+	if parsed[1].Time > 0 then
+		table.insert(parsed, 1, { Time = 0, Value = parsed[1].Value })
+	end
+	
+	if parsed[#parsed].Time < 1 then
+		table.insert(parsed, { Time = 1, Value = parsed[#parsed].Value })
+	end
+	
+	while #parsed > 20 do
+		table.remove(parsed, #parsed - 1)
+	end
+	
+	if #parsed < 2 then
+		return nil
+	end
+	
+	local keypoints = {}
+	for _, p in ipairs(parsed) do
+		table.insert(keypoints, NumberSequenceKeypoint.new(p.Time, p.Value))
+	end
+	
+	local success, seq = pcall(function()
+		return NumberSequence.new(keypoints)
+	end)
+	
+	return if success then seq else nil
+end
+
+--[[
 	Extracts the primary visible paint fill from a Figma node.
 ]]
-function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
+function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number, any?)
 	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
-	
 	local fills = node.fills or node.fill
+	
 	if fills then
-		if type(fills) == "table" and (fills.color or fills.r or fills.type == "SOLID") and not fills[1] then
+		if type(fills) == "table" and (fills.color or fills.r or fills.type or fills.gradientStops) and not fills[1] then
 			fills = { fills }
 		end
 		
@@ -82,45 +208,54 @@ function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 					local fillOpacity = if type(fill.opacity) == "number" then math.clamp(fill.opacity, 0, 1) else 1
 					local fillType = string.upper(tostring(fill.type or "SOLID"))
 					
+					-- 1. Gradient Fill
+					if fillType:find("GRADIENT") ~= nil or fill.gradientStops ~= nil then
+						local effectiveAlpha = fillOpacity * nodeOpacity
+						return Color3.new(1, 1, 1), math.clamp(1 - effectiveAlpha, 0, 1), fill
+					end
+					
+					-- 2. Solid Color Fill
 					if fill.color or fill.r or fillType == "SOLID" then
 						local colorData = fill.color or fill
 						local color3, colorTrans = StyleTranslator.ToColor3(colorData)
 						local effectiveAlpha = (1 - colorTrans) * fillOpacity * nodeOpacity
-						return color3, math.clamp(1 - effectiveAlpha, 0, 1)
+						return color3, math.clamp(1 - effectiveAlpha, 0, 1), fill
 					elseif fillType == "IMAGE" then
-						return Color3.new(1, 1, 1), 0
+						return Color3.new(1, 1, 1), 0, fill
 					end
 				elseif type(fill) == "string" then
 					local color3, colorTrans = StyleTranslator.ToColor3(fill)
-					return color3, colorTrans
+					return color3, colorTrans, nil
 				end
 			end
 		elseif type(fills) == "string" then
 			local color3, colorTrans = StyleTranslator.ToColor3(fills)
-			return color3, colorTrans
+			return color3, colorTrans, nil
 		end
 	end
 	
+	-- 3. Check direct backgroundColor
 	local bg = node.backgroundColor or node.bgColor or node.background
 	if bg then
 		local color3, colorTrans = StyleTranslator.ToColor3(bg)
-		local effectiveAlpha = (1 - colorTrans) * nodeOpacity
-		return color3, math.clamp(1 - effectiveAlpha, 0, 1)
+		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1), nil
 	end
 	
+	-- 4. Check direct color property
 	if node.color and type(node.color) == "table" and (node.color.r or node.color[1]) then
 		local color3, colorTrans = StyleTranslator.ToColor3(node.color)
-		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1)
+		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1), nil
 	end
 	
-	return nil, 1
+	return nil, 1, nil
 end
 
 --[[
 	Applies background color, transparency, and multi-stop UIGradient to a GuiObject.
 ]]
 function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
-	local color, transparency = StyleTranslator.GetPrimaryFill(node)
+	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
+	local color, transparency, activeFill = StyleTranslator.GetPrimaryFill(node)
 	
 	if color then
 		guiObject.BackgroundColor3 = color
@@ -135,43 +270,68 @@ function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
 		guiObject.ClipsDescendants = node.clipsContent
 	end
 	
-	-- Multi-stop Linear Gradient fill
-	local fills = node.fills or node.fill
-	if fills and type(fills) == "table" then
-		for _, fill in ipairs(fills) do
-			if type(fill) == "table" and fill.visible ~= false and fill.type == "GRADIENT_LINEAR" and fill.gradientStops then
-				local colorKeypoints = {}
-				local transKeypoints = {}
-				
-				for _, stop in ipairs(fill.gradientStops) do
-					local stopColor, stopTrans = StyleTranslator.ToColor3(stop.color)
-					local pos = math.clamp(stop.position or 0, 0, 1)
-					table.insert(colorKeypoints, ColorSequenceKeypoint.new(pos, stopColor))
-					table.insert(transKeypoints, NumberSequenceKeypoint.new(pos, stopTrans))
-				end
-				
-				if #colorKeypoints >= 2 then
-					local gradient = Instance.new("UIGradient")
-					gradient.Name = "FigmaGradient"
-					gradient.Color = ColorSequence.new(colorKeypoints)
+	-- Gradient handling
+	local fills = node.fills or node.fill or (if activeFill then { activeFill } else nil)
+	if fills then
+		if type(fills) == "table" and not fills[1] and (fills.type or fills.gradientStops) then
+			fills = { fills }
+		end
+		
+		if type(fills) == "table" then
+			for _, fill in ipairs(fills) do
+				if type(fill) == "table" and fill.visible ~= false then
+					local fillType = string.upper(tostring(fill.type or ""))
+					local isGradient = fillType:find("GRADIENT") ~= nil or fill.gradientStops ~= nil
 					
-					if #transKeypoints >= 2 then
-						gradient.Transparency = NumberSequence.new(transKeypoints)
+					if isGradient and fill.gradientStops and type(fill.gradientStops) == "table" then
+						local colorSeq = buildColorSequence(fill.gradientStops)
+						local transSeq = buildTransparencySequence(fill.gradientStops, nodeOpacity)
+						
+						if colorSeq then
+							guiObject.BackgroundColor3 = Color3.new(1, 1, 1)
+							guiObject.BackgroundTransparency = 0
+							
+							local gradient = Instance.new("UIGradient")
+							gradient.Name = "FigmaGradient"
+							gradient.Color = colorSeq
+							
+							if transSeq then
+								gradient.Transparency = transSeq
+							end
+							
+							-- Precise gradient rotation angle calculation
+							local rotationSet = false
+							if fill.gradientTransform and type(fill.gradientTransform) == "table" then
+								local m = fill.gradientTransform
+								if m[1] and m[2] then
+									local a = tonumber(m[1][1]) or 0
+									local b = tonumber(m[2][1] or m[1][2]) or 0
+									local angle = math.deg(math.atan2(b, a))
+									gradient.Rotation = math.round(angle)
+									rotationSet = true
+								end
+							end
+							
+							if not rotationSet and fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
+								local p0 = fill.gradientHandlePositions[1]
+								local p1 = fill.gradientHandlePositions[2]
+								local dx = (p1.x or 0) - (p0.x or 0)
+								local dy = (p1.y or 0) - (p0.y or 0)
+								local angle = math.deg(math.atan2(dy, dx))
+								gradient.Rotation = math.round(angle)
+								rotationSet = true
+							end
+							
+							-- Default vertical gradient if linear gradient without explicit handles (top to bottom)
+							if not rotationSet and fillType == "GRADIENT_LINEAR" then
+								gradient.Rotation = 90
+							end
+							
+							gradient.Parent = guiObject
+						end
+						break
 					end
-					
-					-- Compute gradient angle
-					if fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
-						local p0 = fill.gradientHandlePositions[1]
-						local p1 = fill.gradientHandlePositions[2]
-						local dx = (p1.x or 0) - (p0.x or 0)
-						local dy = (p1.y or 0) - (p0.y or 0)
-						local angle = math.deg(math.atan2(dy, dx))
-						gradient.Rotation = math.round(angle)
-					end
-					
-					gradient.Parent = guiObject
 				end
-				break
 			end
 		end
 	end
@@ -224,6 +384,7 @@ end
 
 --[[
 	Applies UICorner to round edges if cornerRadius > 0.
+	Supports perfect pill/stadium buttons when radius >= height / 2.
 ]]
 function StyleTranslator.ApplyCorners(guiObject: GuiObject, node: any): UICorner?
 	local radius = tonumber(node.cornerRadius or node.radius or node.borderRadius) or 0
@@ -241,7 +402,14 @@ function StyleTranslator.ApplyCorners(guiObject: GuiObject, node: any): UICorner
 	if radius > 0 then
 		local corner = Instance.new("UICorner")
 		corner.Name = "FigmaCorner"
-		corner.CornerRadius = UDim.new(0, math.round(radius))
+		
+		local h = tonumber(node.height or (node.absoluteBoundingBox and node.absoluteBoundingBox.height)) or 0
+		if (h > 0 and radius >= (h / 2)) or radius >= 100 then
+			corner.CornerRadius = UDim.new(1, 0) -- Perfect pill / stadium end caps
+		else
+			corner.CornerRadius = UDim.new(0, math.round(radius))
+		end
+		
 		corner.Parent = guiObject
 		return corner
 	end

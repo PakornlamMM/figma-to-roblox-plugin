@@ -1,5 +1,8 @@
 # Figma to Roblox Plugin Suite
 
+# This plugin aren't perfect yet. There's still some bugs to fix.
+## Don't expect perfect UI translation from this plugin
+
 A complete bidirectional workflow to export UI designs from **Figma** and generate pixel-perfect, native UI hierarchies in **Roblox Studio**.
 
 ---
@@ -25,10 +28,10 @@ figma-to-roblox-plugin/
             ├── ThemeManager.lua    # Studio Light/Dark theme adaptation
             ├── PluginUI.lua        # DockWidget interface & status bar
             ├── JsonParser.lua      # Multi-format JSON decoder & schema normalizer
-            ├── LayoutTranslator.lua# AutoLayout (HUG/FILL/SpaceBetween), UDim2 & UIPadding
-            ├── StyleTranslator.lua # Drop Shadows, Multi-stop UIGradients, UICorner & UIStroke
+            ├── LayoutTranslator.lua# AutoLayout (HUG/FILL/SpaceBetween), UDim2, UIAspectRatioConstraint & UIPadding
+            ├── StyleTranslator.lua # Drop Shadows, Multi-stop UIGradients, Stadium Corners & UIStroke
             ├── TextTranslator.lua  # Font matching, sizes, alignments & text wrapping
-            └── InstanceGenerator.lua# Recursive tree traversal & interactive controls generator
+            └── InstanceGenerator.lua# Recursive tree traversal, UIScale controller & interactive controls generator
 ```
 
 ---
@@ -39,18 +42,30 @@ figma-to-roblox-plugin/
 1. In the **Figma Desktop App**, open your design file.
 2. Go to **Plugins** $\rightarrow$ **Development** $\rightarrow$ **Import plugin from manifest...**.
 3. Select `figma-companion-plugin/manifest.json`.
-4. Select your UI frame (e.g. `Frame 1` or `TextButton`) and click **"📋 Copy JSON for Roblox"**.
+4. Select your UI frame (e.g. `HeaderBar`, `Card`, or `TextButton`) and click **"📋 Copy JSON for Roblox"**.
 
 ### Step 2: Import into Roblox Studio
 1. Open your place in **Roblox Studio**.
 2. In Explorer, create a Script, paste the contents of `roblox-plugin/INSTALL_IN_STUDIO.lua`, and right-click $\rightarrow$ **"Save as Local Plugin..."**.
 3. Click the **"Figma to Roblox"** button in your Plugins toolbar.
 4. Paste (`Ctrl + V`) into the text box and click **"⚡ Generate UI in StarterGui"**.
-5. Your UI will generate centered in `StarterGui` with full `Ctrl + Z` undo support!
+5. Your UI will generate centered in `StarterGui` with responsive scaling and full `Ctrl + Z` undo support!
 
 ---
 
 ## 📝 Changelog
+
+### `v0.0.3`
+- **Multi-Resolution Responsive Scaler Engine:**
+  - Automatically calculates the canvas reference resolution (`DesignWidth` / `DesignHeight`) from the root Figma frame.
+  - Attaches a responsive `UIScale` object to the root GUI frame.
+  - Automatically generates a standalone client-side `ResponsiveUIScaler` controller `LocalScript` inside `ScreenGui` that adapts smoothly across **Mobile phones, Tablets, PCs, and 4K displays** with zero UI cut-off or distortion.
+- **Aspect Ratio Protection (`UIAspectRatioConstraint`):**
+  - Automatically detects 1:1 shapes (square buttons, badges, circular avatars, icons) and attaches `UIAspectRatioConstraint` to prevent unwanted stretching across different screen ratios.
+- **Gradient Matrix & Visual Refinements:**
+  - Gradient angle rotation derived from Figma `gradientTransform` affine matrix and `gradientHandlePositions`.
+  - Added support for smooth stadium/pill buttons (`CornerRadius = UDim.new(1, 0)`).
+  - Ensured `Contextual` text stroke outline rendering on all `TextLabel` and `TextBox` elements.
 
 ### `v0.0.2`
 - **Interactive Controls Support:**
