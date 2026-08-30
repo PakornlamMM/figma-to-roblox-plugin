@@ -2,9 +2,15 @@
 --[[
 	InstanceGenerator.lua
 	Recursively converts a normalized FigmaNode hierarchy into native Roblox UI instances.
-	Supports Interactive Controls (TextButton, ImageButton, TextBox), Vectors (ImageLabel),
-	Drop Shadows (ImageLabel 9-slice), Multi-stop Gradients (UIGradient),
-	and Frames with AutoLayout (HUG/FILL), UICorner, and UIStroke.
+	Supports:
+	• Multi-Resolution Responsive Scaler (UIScale & responsive LocalScript)
+	• UIAspectRatioConstraint (preserves 1:1 shapes, avatars, icons, badges)
+	• Interactive Controls (TextButton, ImageButton, TextBox)
+	• Button Label Auto-Centering (guarantees text inside buttons spans 100% and is centered)
+	• Drop Shadows (9-slice ImageLabel overlay)
+	• Multi-stop & Rainbow Gradients (UIGradient)
+	• AutoLayout Engine (HUG, FILL, SpaceBetween, UIPadding)
+	• UICorner (including full pill/stadium buttons) & UIStroke (Border/Contextual)
 ]]
 
 local LayoutTranslator = require(script.Parent:WaitForChild("LayoutTranslator"))
@@ -27,6 +33,8 @@ export type GenerationStats = {
 	Strokes: number,
 	Shadows: number,
 	Layouts: number,
+	AspectRatios: number,
+	Scalers: number,
 }
 
 local InstanceGenerator = {}
@@ -107,7 +115,8 @@ local function buildHierarchy(
 	parentInstance: Instance,
 	parentRect: any?,
 	options: ConversionOptions,
-	stats: GenerationStats
+	stats: GenerationStats,
+	isRoot: boolean?
 ): GuiObject?
 	if options.ignoreInvisible and node.visible == false then
 		return nil
@@ -116,11 +125,11 @@ local function buildHierarchy(
 	local instanceType = resolveInstanceType(node)
 	local guiObject: GuiObject
 	
-	-- 1. Instantiate the matching Roblox GuiObject
+	-- 1. Instantiate matching Roblox GuiObject
 	if instanceType == "BUTTON_TEXT" then
 		local btn = Instance.new("TextButton")
 		btn.AutoButtonColor = true
-		btn.Text = "" -- Keep text empty so inner styled TextLabels or icons render with full fidelity
+		btn.Text = "" -- Empty text so child styled TextLabels render cleanly
 		btn.ClipsDescendants = node.clipsContent or false
 		StyleTranslator.ApplyBackground(btn, node)
 		guiObject = btn
@@ -140,7 +149,6 @@ local function buildHierarchy(
 		textBox.ClipsDescendants = false
 		textBox.AutoLocalize = false
 		
-		-- Setup placeholder text if applicable
 		local rawText = tostring(node.characters or node.text or node.placeholder or "")
 		if rawText ~= "" and (rawText:lower():match("^enter") or rawText:lower():match("^search") or rawText:lower():match("^type") or rawText:lower():match("^your")) then
 			textBox.PlaceholderText = rawText
@@ -177,53 +185,131 @@ local function buildHierarchy(
 	
 	guiObject.Name = tostring(node.name or node.id or "FigmaElement")
 	
-	-- 2. Calculate and apply Transform (Position, Size, AnchorPoint)
-	local position, size, anchorPoint = LayoutTranslator.CalculateTransform(node, parentRect, options)
-	guiObject.Position = position
-	guiObject.Size = size
-	guiObject.AnchorPoint = anchorPoint
+	-- 2. Transform (Position, Size, AnchorPoint)
+	local isButtonChild = parentInstance:IsA("TextButton") or parentInstance:IsA("ImageButton")
+	if isButtonChild and guiObject:IsA("TextLabel") then
+		-- Child label inside a Button: guarantee 100% full span and centered alignment
+		guiObject.Position = UDim2.new(0, 0, 0, 0)
+		guiObject.Size = UDim2.new(1, 0, 1, 0)
+		guiObject.AnchorPoint = Vector2.new(0, 0)
+		guiObject.TextXAlignment = Enum.TextXAlignment.Center
+		guiObject.TextYAlignment = Enum.TextYAlignment.Center
+	else
+		local position, size, anchorPoint = LayoutTranslator.CalculateTransform(node, parentRect, options)
+		guiObject.Position = position
+		guiObject.Size = size
+		guiObject.AnchorPoint = anchorPoint
+	end
 	
 	-- 3. Apply UICorner
 	local corner = StyleTranslator.ApplyCorners(guiObject, node)
-	if corner then
-		stats.Corners += 1
-	end
+	if corner then stats.Corners += 1 end
 	
 	-- 4. Apply UIStroke
 	local stroke = StyleTranslator.ApplyStrokes(guiObject, node)
-	if stroke then
-		stats.Strokes += 1
-	end
+	if stroke then stats.Strokes += 1 end
 	
 	-- 5. Apply Drop Shadows (Effects)
 	local shadow = StyleTranslator.ApplyEffects(guiObject, node)
-	if shadow then
-		stats.Shadows += 1
-	end
+	if shadow then stats.Shadows += 1 end
 	
 	-- 6. Apply AutoLayout (UIListLayout, UIPadding, UIFlexItem, AutomaticSize)
 	LayoutTranslator.ApplyAutoLayout(guiObject, node)
-	if node.layoutMode and node.layoutMode ~= "NONE" then
-		stats.Layouts += 1
+	if node.layoutMode and node.layoutMode ~= "NONE" then stats.Layouts += 1 end
+	
+	-- 7. Apply UIAspectRatioConstraint for icons, avatars, and 1:1 shapes (non-root)
+	if not isRoot and not isButtonChild then
+		local aspect = LayoutTranslator.ApplyAspectRatio(guiObject, node)
+		if aspect then stats.AspectRatios += 1 end
 	end
 	
-	-- Parent to container
+	-- 8. Root Scaler setup
+	if isRoot then
+		local uiScale = Instance.new("UIScale")
+		uiScale.Name = "ResponsiveUIScale"
+		uiScale.Scale = 1
+		uiScale.Parent = guiObject
+		stats.Scalers += 1
+	end
+	
 	guiObject.Parent = parentInstance
 	stats.TotalCreated += 1
 	
-	-- 7. Recursively process children
+	-- 9. Process Children
 	local currentRect = node.absoluteBoundingBox or node.absoluteRenderBounds or node.size or node.bounds or parentRect
-	
 	local children = node.children
 	if children and type(children) == "table" and #children > 0 then
 		for _, childNode in ipairs(children) do
 			if type(childNode) == "table" then
-				buildHierarchy(childNode, guiObject, currentRect, options, stats)
+				buildHierarchy(childNode, guiObject, currentRect, options, stats, false)
 			end
 		end
 	end
 	
 	return guiObject
+end
+
+--[[
+	Generates the client-side responsive scaler controller script.
+]]
+local function injectResponsiveScript(screenGui: ScreenGui, refWidth: number, refHeight: number)
+	screenGui:SetAttribute("ReferenceResolution", Vector2.new(refWidth, refHeight))
+	screenGui:SetAttribute("DesignWidth", refWidth)
+	screenGui:SetAttribute("DesignHeight", refHeight)
+	
+	local localScript = Instance.new("LocalScript")
+	localScript.Name = "ResponsiveUIScaler"
+	localScript.Source = string.format([=[--!strict
+--[[
+	ResponsiveUIScaler (Auto-generated by FigmaToRoblox)
+	Dynamically updates UIScale based on current viewport size to preserve
+	pixel-perfect design proportions across Mobile, Tablet, Desktop, and 4K displays.
+]]
+
+local camera = workspace.CurrentCamera
+local screenGui = script.Parent
+
+local function getTargetScale(): UIScale?
+	local rootFrame = screenGui:FindFirstChildWhichIsA("GuiObject")
+	if rootFrame then
+		local scale = rootFrame:FindFirstChild("ResponsiveUIScale") or rootFrame:FindFirstChildWhichIsA("UIScale")
+		if scale and scale:IsA("UIScale") then
+			return scale
+		end
+	end
+	return screenGui:FindFirstChildWhichIsA("UIScale")
+end
+
+local function updateScale()
+	local uiScale = getTargetScale()
+	if not uiScale then return end
+	
+	local refRes = screenGui:GetAttribute("ReferenceResolution") or Vector2.new(%d, %d)
+	local viewport = camera.ViewportSize
+	
+	if viewport.X > 0 and viewport.Y > 0 and refRes.X > 0 and refRes.Y > 0 then
+		local scaleX = viewport.X / refRes.X
+		local scaleY = viewport.Y / refRes.Y
+		-- Use minimum scale factor to guarantee zero UI clipping on any device
+		local factor = math.min(scaleX, scaleY)
+		uiScale.Scale = math.clamp(factor, 0.2, 3.0)
+	end
+end
+
+if camera then
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+end
+
+screenGui.AncestryChanged:Connect(function()
+	if screenGui:IsDescendantOf(game) then
+		updateScale()
+	end
+end)
+
+updateScale()
+]=], math.round(refWidth), math.round(refHeight))
+	
+	localScript.Parent = screenGui
 end
 
 --[[
@@ -245,9 +331,23 @@ function InstanceGenerator.Generate(
 		Strokes = 0,
 		Shadows = 0,
 		Layouts = 0,
+		AspectRatios = 0,
+		Scalers = 0,
 	}
 	
-	local rootGui = buildHierarchy(rootNode, targetParent, nil, options, stats)
+	local rootRect = rootNode.absoluteBoundingBox or rootNode.absoluteRenderBounds or rootNode.size or rootNode.bounds
+	local refWidth = if rootRect then math.max(tonumber(rootRect.width or rootRect.w) or 1920, 100) else 1920
+	local refHeight = if rootRect then math.max(tonumber(rootRect.height or rootRect.h) or 1080, 100) else 1080
+	
+	local rootGui = buildHierarchy(rootNode, targetParent, nil, options, stats, true)
+	
+	if targetParent:IsA("ScreenGui") then
+		injectResponsiveScript(targetParent, refWidth, refHeight)
+	elseif rootGui then
+		rootGui:SetAttribute("ReferenceResolution", Vector2.new(refWidth, refHeight))
+		rootGui:SetAttribute("DesignWidth", refWidth)
+		rootGui:SetAttribute("DesignHeight", refHeight)
+	end
 	
 	return rootGui, stats
 end

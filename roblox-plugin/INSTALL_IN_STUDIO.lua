@@ -1,13 +1,19 @@
 --!strict
 --[[
-	INSTALL_IN_STUDIO.lua (v0.0.2)
+	INSTALL_IN_STUDIO.lua (v0.0.3)
 	Single-file bundled distribution of the FigmaToRoblox plugin.
-	Supports:
-	• AutoLayout Engine (HUG, FILL, FIXED, SpaceBetween, UIPadding)
-	• Advanced Visuals (Drop Shadows, Multi-stop UIGradients, Corner Radii, Strokes)
-	• Interactive Controls (TextButton, ImageButton, TextBox)
-	• Vectors & ImageLabels
-	• Studio Theme Responsiveness & ChangeHistoryService Undo/Redo
+	
+	Features:
+	• 📱 Multi-Resolution Responsive Scaler Engine (UIScale + auto ResponsiveUIScaler script)
+	• 📐 UIAspectRatioConstraint (Protects 1:1 shapes, avatars, icons, badges from stretching)
+	• 🎯 Button Label Auto-Centering (Guarantees text inside buttons spans 100% and is centered)
+	• 🌈 Rainbow & Multi-Stop UIGradients (with automatic ColorSequence validation & matrix rotation)
+	• 💊 Stadium / Pill Button Corners (auto UDim.new(1, 0) for rounded pill ends)
+	• ⚡ AutoLayout Engine (HUG, FILL, FIXED, SpaceBetween, UIPadding)
+	• 🎨 Advanced Visuals (Drop Shadows, Corner Radii, Contextual Text Strokes)
+	• 🖱️ Interactive Controls (TextButton, ImageButton, TextBox)
+	• 🖼️ Vectors & ImageLabels
+	• 🌗 Studio Theme Responsiveness & ChangeHistoryService Undo/Redo
 	
 	HOW TO INSTALL / UPDATE:
 	1. In Roblox Studio, open any place.
@@ -39,18 +45,18 @@ end
 -- =============================================================================
 local Config = {
 	PluginName = "FigmaToRoblox",
-	PluginId = "FigmaToRoblox_DockWidget_v2.5",
+	PluginId = "FigmaToRoblox_DockWidget_v3.0",
 	ToolbarTitle = "Figma UI",
 	ButtonTitle = "Figma to Roblox",
-	ButtonTooltip = "Convert Figma JSON into native Roblox UI instances",
+	ButtonTooltip = "Convert Figma JSON into native Roblox UI instances with responsive scaling",
 	ButtonIcon = "rbxassetid://6031075931",
 	
 	Widget = {
 		InitialDockState = Enum.InitialDockState.Float,
 		InitiallyEnabled = false,
 		OverrideRestore = true,
-		DefaultWidth = 420,
-		DefaultHeight = 560,
+		DefaultWidth = 430,
+		DefaultHeight = 570,
 		MinWidth = 320,
 		MinHeight = 360,
 	},
@@ -186,6 +192,7 @@ local function normalizeNode(rawNode: any): any?
 		isButton = rawNode.isButton,
 		isInput = rawNode.isInput,
 		isVector = rawNode.isVector,
+		preserveAspectRatio = rawNode.preserveAspectRatio or rawNode.preserveRatio,
 		visible = if rawNode.visible ~= nil then rawNode.visible else true,
 		opacity = if type(rawNode.opacity) == "number" then rawNode.opacity else 1,
 		absoluteBoundingBox = rawNode.absoluteBoundingBox or rawNode.absoluteRenderBounds or rawNode.bounds,
@@ -294,49 +301,78 @@ end
 function JsonParser.GetSample(): string
 	return HttpService:JSONEncode({
 		id = "10:100",
-		name = "DonationCard",
+		name = "ResponsiveHeaderBar",
 		type = "FRAME",
-		absoluteBoundingBox = { x = 0, y = 0, width = 640, height = 360 },
-		cornerRadius = 32,
-		backgroundColor = { r = 0.78, g = 0.78, b = 0.78, a = 1 },
-		strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
-		strokeWeight = 12,
-		effects = { { type = "DROP_SHADOW", visible = true, color = { r = 0, g = 0, b = 0, a = 0.35 }, offset = { x = 0, y = 8 }, radius = 16 } },
-		clipsContent = false,
+		absoluteBoundingBox = { x = 0, y = 0, width = 960, height = 120 },
+		cornerRadius = 0,
+		fills = {},
+		backgroundColor = { r = 0.12, g = 0.18, b = 0.32, a = 1 },
 		children = {
 			{
 				id = "10:101",
-				name = "TitleText",
+				name = "HeadTitle",
 				type = "TEXT",
-				absoluteBoundingBox = { x = 26, y = 36, width = 588, height = 77 },
-				characters = "Wanna donate me?",
-				style = { fontFamily = "FredokaOne", fontWeight = 700, fontSize = 48, textAlignHorizontal = "CENTER", textAlignVertical = "CENTER" },
-				fills = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
+				absoluteBoundingBox = { x = 30, y = 30, width = 400, height = 60 },
+				characters = "HEAD TITLE",
+				style = { fontFamily = "FredokaOne", fontWeight = 700, fontSize = 48, textAlignHorizontal = "LEFT", textAlignVertical = "CENTER" },
+				fills = { { type = "SOLID", visible = true, color = { r = 1, g = 1, b = 1, a = 1 } } },
+				strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
+				strokeWeight = 6,
 			},
 			{
 				id = "10:102",
-				name = "TextButton",
+				name = "AvatarCircle",
+				type = "ELLIPSE",
+				role = "AVATAR",
+				preserveAspectRatio = true,
+				absoluteBoundingBox = { x = 520, y = 30, width = 60, height = 60 },
+				cornerRadius = 30,
+				fills = {
+					{
+						type = "GRADIENT_LINEAR",
+						visible = true,
+						gradientStops = {
+							{ position = 0, color = { r = 1, g = 0.8, b = 0.2, a = 1 } },
+							{ position = 1, color = { r = 1, g = 0.3, b = 0.1, a = 1 } },
+						},
+						gradientTransform = { { 0, 1, 0 }, { -1, 0, 1 } },
+					},
+				},
+				strokes = { { type = "SOLID", visible = true, color = { r = 1, g = 1, b = 1, a = 1 } } },
+				strokeWeight = 3,
+			},
+			{
+				id = "10:103",
+				name = "StandardBtn",
 				type = "FRAME",
 				role = "BUTTON",
 				isButton = true,
-				layoutSizingHorizontal = "FIXED",
-				layoutSizingVertical = "FIXED",
-				absoluteBoundingBox = { x = 50, y = 160, width = 540, height = 130 },
-				cornerRadius = 65,
-				fills = { { type = "SOLID", visible = true, color = { r = 0.05, g = 0.82, b = 0.18, a = 1 } } },
+				absoluteBoundingBox = { x = 620, y = 35, width = 280, height = 50 },
+				cornerRadius = 25,
+				fills = {
+					{
+						type = "GRADIENT_LINEAR",
+						visible = true,
+						gradientStops = {
+							{ position = 0, color = { r = 0.95, g = 0.95, b = 0.95, a = 1 } },
+							{ position = 1, color = { r = 0.65, g = 0.65, b = 0.65, a = 1 } },
+						},
+						gradientTransform = { { 0, 1, 0 }, { -1, 0, 1 } },
+					},
+				},
 				strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
-				strokeWeight = 10,
-				effects = { { type = "DROP_SHADOW", visible = true, color = { r = 0, g = 0, b = 0, a = 0.25 }, offset = { x = 0, y = 4 }, radius = 8 } },
-				clipsContent = false,
+				strokeWeight = 4,
 				children = {
 					{
-						id = "10:103",
-						name = "YES",
+						id = "10:104",
+						name = "StandardText",
 						type = "TEXT",
-						absoluteBoundingBox = { x = 50, y = 160, width = 540, height = 130 },
-						characters = "YES",
-						style = { fontFamily = "FredokaOne", fontWeight = 700, fontSize = 52, textAlignHorizontal = "CENTER", textAlignVertical = "CENTER" },
+						absoluteBoundingBox = { x = 620, y = 35, width = 280, height = 50 },
+						characters = "Standard",
+						style = { fontFamily = "FredokaOne", fontWeight = 700, fontSize = 26, textAlignHorizontal = "CENTER", textAlignVertical = "CENTER" },
 						fills = { { type = "SOLID", visible = true, color = { r = 1, g = 1, b = 1, a = 1 } } },
+						strokes = { { type = "SOLID", visible = true, color = { r = 0, g = 0, b = 0, a = 1 } } },
+						strokeWeight = 3,
 					},
 				},
 			},
@@ -352,10 +388,7 @@ local SHADOW_ASSET = "rbxassetid://1316045217"
 local SHADOW_RECT = Rect.new(10, 10, 118, 118)
 
 function StyleTranslator.ToColor3(figmaColor: any?): (Color3, number)
-	if not figmaColor then
-		return Color3.new(1, 1, 1), 0
-	end
-	
+	if not figmaColor then return Color3.new(1, 1, 1), 0 end
 	if type(figmaColor) == "string" then
 		local hex = string.gsub(figmaColor, "#", "")
 		if #hex >= 6 then
@@ -363,42 +396,106 @@ function StyleTranslator.ToColor3(figmaColor: any?): (Color3, number)
 			local g = tonumber(string.sub(hex, 3, 4), 16) or 255
 			local b = tonumber(string.sub(hex, 5, 6), 16) or 255
 			local a = 1
-			if #hex >= 8 then
-				a = (tonumber(string.sub(hex, 7, 8), 16) or 255) / 255
-			end
+			if #hex >= 8 then a = (tonumber(string.sub(hex, 7, 8), 16) or 255) / 255 end
 			return Color3.fromRGB(r, g, b), 1 - a
 		end
 	end
-	
 	if type(figmaColor) == "table" then
 		local rawR = tonumber(figmaColor.r or figmaColor.red or figmaColor[1]) or 0
 		local rawG = tonumber(figmaColor.g or figmaColor.green or figmaColor[2]) or 0
 		local rawB = tonumber(figmaColor.b or figmaColor.blue or figmaColor[3]) or 0
 		local rawA = figmaColor.a or figmaColor.alpha or figmaColor.opacity or figmaColor[4]
-		
 		local is255 = (rawR > 1 or rawG > 1 or rawB > 1)
 		local r = if is255 then math.clamp(rawR / 255, 0, 1) else math.clamp(rawR, 0, 1)
 		local g = if is255 then math.clamp(rawG / 255, 0, 1) else math.clamp(rawG, 0, 1)
 		local b = if is255 then math.clamp(rawB / 255, 0, 1) else math.clamp(rawB, 0, 1)
-		
 		local alpha = 1
 		if rawA ~= nil then
 			local numA = tonumber(rawA) or 1
 			alpha = if numA > 1 then math.clamp(numA / 255, 0, 1) else math.clamp(numA, 0, 1)
 		end
-		
 		return Color3.new(r, g, b), 1 - alpha
 	end
-	
 	return Color3.new(1, 1, 1), 0
 end
 
-function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
-	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
+local function buildColorSequence(stops: { any }): ColorSequence?
+	if not stops or #stops == 0 then return nil end
+	local parsed = {}
+	for _, stop in ipairs(stops) do
+		if type(stop) == "table" then
+			local colorData = stop.color or stop
+			local stopColor, _ = StyleTranslator.ToColor3(colorData)
+			local rawPos = tonumber(stop.position or stop.pos or stop.offset or stop.location) or 0
+			table.insert(parsed, { Time = math.clamp(rawPos, 0, 1), Color = stopColor })
+		end
+	end
+	if #parsed == 0 then return nil end
+	table.sort(parsed, function(a, b) return a.Time < b.Time end)
+	for i = 2, #parsed do
+		if parsed[i].Time <= parsed[i - 1].Time then
+			parsed[i].Time = math.min(1, parsed[i - 1].Time + 0.001)
+		end
+	end
+	if parsed[1].Time > 0 then
+		table.insert(parsed, 1, { Time = 0, Color = parsed[1].Color })
+	end
+	if parsed[#parsed].Time < 1 then
+		table.insert(parsed, { Time = 1, Color = parsed[#parsed].Color })
+	end
+	while #parsed > 20 do table.remove(parsed, #parsed - 1) end
+	if #parsed < 2 then return nil end
 	
+	local keypoints = {}
+	for _, p in ipairs(parsed) do
+		table.insert(keypoints, ColorSequenceKeypoint.new(p.Time, p.Color))
+	end
+	local success, seq = pcall(function() return ColorSequence.new(keypoints) end)
+	return if success then seq else nil
+end
+
+local function buildTransparencySequence(stops: { any }, nodeOpacity: number): NumberSequence?
+	if not stops or #stops == 0 then return nil end
+	local parsed = {}
+	for _, stop in ipairs(stops) do
+		if type(stop) == "table" then
+			local colorData = stop.color or stop
+			local _, stopTrans = StyleTranslator.ToColor3(colorData)
+			local rawPos = tonumber(stop.position or stop.pos or stop.offset or stop.location) or 0
+			local effectiveTrans = math.clamp(1 - ((1 - stopTrans) * nodeOpacity), 0, 1)
+			table.insert(parsed, { Time = math.clamp(rawPos, 0, 1), Value = effectiveTrans })
+		end
+	end
+	if #parsed == 0 then return nil end
+	table.sort(parsed, function(a, b) return a.Time < b.Time end)
+	for i = 2, #parsed do
+		if parsed[i].Time <= parsed[i - 1].Time then
+			parsed[i].Time = math.min(1, parsed[i - 1].Time + 0.001)
+		end
+	end
+	if parsed[1].Time > 0 then
+		table.insert(parsed, 1, { Time = 0, Value = parsed[1].Value })
+	end
+	if parsed[#parsed].Time < 1 then
+		table.insert(parsed, { Time = 1, Value = parsed[#parsed].Value })
+	end
+	while #parsed > 20 do table.remove(parsed, #parsed - 1) end
+	if #parsed < 2 then return nil end
+	
+	local keypoints = {}
+	for _, p in ipairs(parsed) do
+		table.insert(keypoints, NumberSequenceKeypoint.new(p.Time, p.Value))
+	end
+	local success, seq = pcall(function() return NumberSequence.new(keypoints) end)
+	return if success then seq else nil
+end
+
+function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number, any?)
+	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
 	local fills = node.fills or node.fill
+	
 	if fills then
-		if type(fills) == "table" and (fills.color or fills.r or fills.type == "SOLID") and not fills[1] then
+		if type(fills) == "table" and (fills.color or fills.r or fills.type or fills.gradientStops) and not fills[1] then
 			fills = { fills }
 		end
 		if type(fills) == "table" and #fills > 0 then
@@ -406,39 +503,49 @@ function StyleTranslator.GetPrimaryFill(node: any): (Color3?, number)
 				if type(fill) == "table" and fill.visible ~= false then
 					local fillOpacity = if type(fill.opacity) == "number" then math.clamp(fill.opacity, 0, 1) else 1
 					local fillType = string.upper(tostring(fill.type or "SOLID"))
+					
+					if fillType:find("GRADIENT") ~= nil or fill.gradientStops ~= nil then
+						local effectiveAlpha = fillOpacity * nodeOpacity
+						return Color3.new(1, 1, 1), math.clamp(1 - effectiveAlpha, 0, 1), fill
+					end
+					
 					if fill.color or fill.r or fillType == "SOLID" then
 						local colorData = fill.color or fill
 						local color3, colorTrans = StyleTranslator.ToColor3(colorData)
 						local effectiveAlpha = (1 - colorTrans) * fillOpacity * nodeOpacity
-						return color3, math.clamp(1 - effectiveAlpha, 0, 1)
+						return color3, math.clamp(1 - effectiveAlpha, 0, 1), fill
 					elseif fillType == "IMAGE" then
-						return Color3.new(1, 1, 1), 0
+						return Color3.new(1, 1, 1), 0, fill
 					end
 				elseif type(fill) == "string" then
-					return StyleTranslator.ToColor3(fill)
+					local color3, colorTrans = StyleTranslator.ToColor3(fill)
+					return color3, colorTrans, nil
 				end
 			end
 		elseif type(fills) == "string" then
-			return StyleTranslator.ToColor3(fills)
+			local color3, colorTrans = StyleTranslator.ToColor3(fills)
+			return color3, colorTrans, nil
 		end
 	end
 	
 	local bg = node.backgroundColor or node.bgColor or node.background
 	if bg then
 		local color3, colorTrans = StyleTranslator.ToColor3(bg)
-		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1)
+		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1), nil
 	end
 	
 	if node.color and type(node.color) == "table" and (node.color.r or node.color[1]) then
 		local color3, colorTrans = StyleTranslator.ToColor3(node.color)
-		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1)
+		return color3, math.clamp(1 - ((1 - colorTrans) * nodeOpacity), 0, 1), nil
 	end
 	
-	return nil, 1
+	return nil, 1, nil
 end
 
 function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
-	local color, trans = StyleTranslator.GetPrimaryFill(node)
+	local nodeOpacity = if type(node.opacity) == "number" then math.clamp(node.opacity, 0, 1) else 1
+	local color, trans, activeFill = StyleTranslator.GetPrimaryFill(node)
+	
 	if color then
 		guiObject.BackgroundColor3 = color
 		guiObject.BackgroundTransparency = trans
@@ -450,36 +557,59 @@ function StyleTranslator.ApplyBackground(guiObject: GuiObject, node: any)
 		guiObject.ClipsDescendants = node.clipsContent
 	end
 	
-	-- Multi-stop Linear Gradients
-	local fills = node.fills or node.fill
-	if fills and type(fills) == "table" then
-		for _, fill in ipairs(fills) do
-			if type(fill) == "table" and fill.visible ~= false and fill.type == "GRADIENT_LINEAR" and fill.gradientStops then
-				local colorKeypoints = {}
-				local transKeypoints = {}
-				for _, stop in ipairs(fill.gradientStops) do
-					local stopColor, stopTrans = StyleTranslator.ToColor3(stop.color)
-					local pos = math.clamp(stop.position or 0, 0, 1)
-					table.insert(colorKeypoints, ColorSequenceKeypoint.new(pos, stopColor))
-					table.insert(transKeypoints, NumberSequenceKeypoint.new(pos, stopTrans))
-				end
-				if #colorKeypoints >= 2 then
-					local gradient = Instance.new("UIGradient")
-					gradient.Name = "FigmaGradient"
-					gradient.Color = ColorSequence.new(colorKeypoints)
-					if #transKeypoints >= 2 then
-						gradient.Transparency = NumberSequence.new(transKeypoints)
+	local fills = node.fills or node.fill or (if activeFill then { activeFill } else nil)
+	if fills then
+		if type(fills) == "table" and not fills[1] and (fills.type or fills.gradientStops) then
+			fills = { fills }
+		end
+		if type(fills) == "table" then
+			for _, fill in ipairs(fills) do
+				if type(fill) == "table" and fill.visible ~= false then
+					local fillType = string.upper(tostring(fill.type or ""))
+					local isGradient = fillType:find("GRADIENT") ~= nil or fill.gradientStops ~= nil
+					
+					if isGradient and fill.gradientStops and type(fill.gradientStops) == "table" then
+						local colorSeq = buildColorSequence(fill.gradientStops)
+						local transSeq = buildTransparencySequence(fill.gradientStops, nodeOpacity)
+						
+						if colorSeq then
+							guiObject.BackgroundColor3 = Color3.new(1, 1, 1)
+							guiObject.BackgroundTransparency = 0
+							
+							local gradient = Instance.new("UIGradient")
+							gradient.Name = "FigmaGradient"
+							gradient.Color = colorSeq
+							if transSeq then
+								gradient.Transparency = transSeq
+							end
+							
+							local rotationSet = false
+							if fill.gradientTransform and type(fill.gradientTransform) == "table" then
+								local m = fill.gradientTransform
+								if m[1] and m[2] then
+									local a = tonumber(m[1][1]) or 0
+									local b = tonumber(m[2][1] or m[1][2]) or 0
+									local angle = math.deg(math.atan2(b, a))
+									gradient.Rotation = math.round(angle)
+									rotationSet = true
+								end
+							end
+							if not rotationSet and fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
+								local p0 = fill.gradientHandlePositions[1]
+								local p1 = fill.gradientHandlePositions[2]
+								local dx = (p1.x or 0) - (p0.x or 0)
+								local dy = (p1.y or 0) - (p0.y or 0)
+								gradient.Rotation = math.round(math.deg(math.atan2(dy, dx)))
+								rotationSet = true
+							end
+							if not rotationSet and fillType == "GRADIENT_LINEAR" then
+								gradient.Rotation = 90
+							end
+							gradient.Parent = guiObject
+						end
+						break
 					end
-					if fill.gradientHandlePositions and #fill.gradientHandlePositions >= 2 then
-						local p0 = fill.gradientHandlePositions[1]
-						local p1 = fill.gradientHandlePositions[2]
-						local dx = (p1.x or 0) - (p0.x or 0)
-						local dy = (p1.y or 0) - (p0.y or 0)
-						gradient.Rotation = math.round(math.deg(math.atan2(dy, dx)))
-					end
-					gradient.Parent = guiObject
 				end
-				break
 			end
 		end
 	end
@@ -534,7 +664,12 @@ function StyleTranslator.ApplyCorners(guiObject: GuiObject, node: any): UICorner
 	if radius > 0 then
 		local corner = Instance.new("UICorner")
 		corner.Name = "FigmaCorner"
-		corner.CornerRadius = UDim.new(0, math.round(radius))
+		local h = tonumber(node.height or (node.absoluteBoundingBox and node.absoluteBoundingBox.height)) or 0
+		if (h > 0 and radius >= (h / 2)) or radius >= 100 then
+			corner.CornerRadius = UDim.new(1, 0)
+		else
+			corner.CornerRadius = UDim.new(0, math.round(radius))
+		end
 		corner.Parent = guiObject
 		return corner
 	end
@@ -582,7 +717,13 @@ function StyleTranslator.ApplyStrokes(guiObject: GuiObject, node: any): UIStroke
 		uiStroke.Color = strokeColor
 		uiStroke.Thickness = math.max(1, math.round(weight))
 		uiStroke.Transparency = strokeTrans
-		uiStroke.ApplyStrokeMode = if guiObject:IsA("TextLabel") or guiObject:IsA("TextBox") then Enum.ApplyStrokeMode.Contextual else Enum.ApplyStrokeMode.Border
+		
+		if guiObject:IsA("TextLabel") or guiObject:IsA("TextBox") then
+			uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+		else
+			uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		end
+		
 		uiStroke.Parent = guiObject
 		return uiStroke
 	end
@@ -590,6 +731,7 @@ function StyleTranslator.ApplyStrokes(guiObject: GuiObject, node: any): UIStroke
 end
 
 local LayoutTranslator = {}
+
 function LayoutTranslator.CalculateTransform(node: any, parentRect: any?, options: any): (UDim2, UDim2, Vector2)
 	local nodeRect = node.absoluteBoundingBox or node.absoluteRenderBounds or node.size or node.bounds
 	local width = 100
@@ -642,10 +784,10 @@ function LayoutTranslator.CalculateTransform(node: any, parentRect: any?, option
 	local position: UDim2
 	local size: UDim2
 	
-	if mode == "ResponsiveScale" then
+	if mode == "ResponsiveScale" or mode == "ResponsiveAuto" then
 		position = UDim2.new(relX / parentWidth, 0, relY / parentHeight, 0)
 		size = if (sizingH == "HUG" or sizingV == "HUG")
-			then UDim2.new(if sizingH == "HUG" then 0 else sizeScaleX, 0, if sizingV == "HUG" then 0 else sizeScaleY, 0)
+			then UDim2.new(if sizingH == "HUG" then 0 else sizeScaleX, if sizingH == "HUG" then 0 else 0, if sizingV == "HUG" then 0 else sizeScaleY, if sizingV == "HUG" then 0 else 0)
 			else UDim2.new(sizeScaleX, 0, sizeScaleY, 0)
 	elseif mode == "ExactOffset" then
 		position = UDim2.new(0, math.round(relX), 0, math.round(relY))
@@ -656,6 +798,31 @@ function LayoutTranslator.CalculateTransform(node: any, parentRect: any?, option
 	end
 	
 	return position, size, Vector2.new(0, 0)
+end
+
+function LayoutTranslator.ApplyAspectRatio(guiObject: GuiObject, node: any): UIAspectRatioConstraint?
+	local nodeRect = node.absoluteBoundingBox or node.absoluteRenderBounds or node.size or node.bounds
+	if not nodeRect then return nil end
+	
+	local width = tonumber(nodeRect.width or nodeRect.w) or 0
+	local height = tonumber(nodeRect.height or nodeRect.h) or 0
+	if width <= 0 or height <= 0 then return nil end
+	
+	local t = string.upper(tostring(node.type or node.nodeType or ""))
+	local role = string.upper(tostring(node.role or ""))
+	local is1to1 = math.abs(width - height) < 1.5
+	local isIconOrAvatar = (role == "ICON" or role == "AVATAR" or t == "ELLIPSE" or t == "STAR" or node.isVector == true)
+	
+	if is1to1 or isIconOrAvatar or node.preserveAspectRatio == true then
+		local constraint = Instance.new("UIAspectRatioConstraint")
+		constraint.Name = "FigmaAspectRatio"
+		constraint.AspectRatio = math.round((width / height) * 1000) / 1000
+		constraint.AspectType = Enum.AspectType.FitWithinMaxSize
+		constraint.DominantAxis = Enum.DominantAxis.Width
+		constraint.Parent = guiObject
+		return constraint
+	end
+	return nil
 end
 
 function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
@@ -684,38 +851,41 @@ function LayoutTranslator.ApplyAutoLayout(guiObject: GuiObject, node: any)
 		return
 	end
 	
-	local listLayout = Instance.new("UIListLayout")
-	listLayout.Name = "FigmaListLayout"
-	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	local isHoriz = (layoutMode == "HORIZONTAL")
-	listLayout.FillDirection = if isHoriz then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
-	listLayout.Padding = UDim.new(0, math.round(node.itemSpacing or 0))
-	
-	local primaryAlign = string.upper(tostring(node.primaryAxisAlignItems or "MIN"))
-	local counterAlign = string.upper(tostring(node.counterAxisAlignItems or "MIN"))
-	
-	if isHoriz then
-		if primaryAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		elseif primaryAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-		elseif primaryAlign == "SPACE_BETWEEN" then
-			pcall(function() (listLayout :: any).HorizontalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
-		else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+	-- Only attach UIListLayout if the container has child elements
+	if node.children and type(node.children) == "table" and #node.children > 0 then
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.Name = "FigmaListLayout"
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		local isHoriz = (layoutMode == "HORIZONTAL")
+		listLayout.FillDirection = if isHoriz then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
+		listLayout.Padding = UDim.new(0, math.round(node.itemSpacing or 0))
 		
-		if counterAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-		elseif counterAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-		else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
-	else
-		if primaryAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-		elseif primaryAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-		elseif primaryAlign == "SPACE_BETWEEN" then
-			pcall(function() (listLayout :: any).VerticalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
-		else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
+		local primaryAlign = string.upper(tostring(node.primaryAxisAlignItems or "MIN"))
+		local counterAlign = string.upper(tostring(node.counterAxisAlignItems or "MIN"))
 		
-		if counterAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		elseif counterAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-		else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+		if isHoriz then
+			if primaryAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			elseif primaryAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			elseif primaryAlign == "SPACE_BETWEEN" then
+				pcall(function() (listLayout :: any).HorizontalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
+			else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+			
+			if counterAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			elseif counterAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+			else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
+		else
+			if primaryAlign == "CENTER" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			elseif primaryAlign == "MAX" then listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+			elseif primaryAlign == "SPACE_BETWEEN" then
+				pcall(function() (listLayout :: any).VerticalFlex = (Enum :: any).UIFlexAlignment.SpaceBetween end)
+			else listLayout.VerticalAlignment = Enum.VerticalAlignment.Top end
+			
+			if counterAlign == "CENTER" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			elseif counterAlign == "MAX" then listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			else listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+		end
+		listLayout.Parent = guiObject
 	end
-	listLayout.Parent = guiObject
 	
 	local padL = node.paddingLeft or 0
 	local padR = node.paddingRight or 0
@@ -857,7 +1027,7 @@ local function resolveInstanceType(node: any): string
 	return "FRAME"
 end
 
-local function buildHierarchy(node: any, parent: Instance, parentRect: any?, stats: any, options: any): GuiObject?
+local function buildHierarchy(node: any, parent: Instance, parentRect: any?, stats: any, options: any, isRoot: boolean?): GuiObject?
 	if options and options.ignoreInvisible and node.visible == false then
 		return nil
 	end
@@ -920,16 +1090,37 @@ local function buildHierarchy(node: any, parent: Instance, parentRect: any?, sta
 	end
 	
 	gui.Name = tostring(node.name or node.id or "FigmaElement")
-	local pos, sz, anchor = LayoutTranslator.CalculateTransform(node, parentRect, options)
-	gui.Position = pos
-	gui.Size = sz
-	gui.AnchorPoint = anchor
+	
+	local isButtonChild = parent:IsA("TextButton") or parent:IsA("ImageButton")
+	if isButtonChild and gui:IsA("TextLabel") then
+		gui.Position = UDim2.new(0, 0, 0, 0)
+		gui.Size = UDim2.new(1, 0, 1, 0)
+		gui.AnchorPoint = Vector2.new(0, 0)
+		gui.TextXAlignment = Enum.TextXAlignment.Center
+		gui.TextYAlignment = Enum.TextYAlignment.Center
+	else
+		local pos, sz, anchor = LayoutTranslator.CalculateTransform(node, parentRect, options)
+		gui.Position = pos
+		gui.Size = sz
+		gui.AnchorPoint = anchor
+	end
 	
 	if StyleTranslator.ApplyCorners(gui, node) then stats.Corners += 1 end
 	if StyleTranslator.ApplyStrokes(gui, node) then stats.Strokes += 1 end
 	if StyleTranslator.ApplyEffects(gui, node) then stats.Shadows += 1 end
 	LayoutTranslator.ApplyAutoLayout(gui, node)
 	if node.layoutMode and node.layoutMode ~= "NONE" then stats.Layouts += 1 end
+	
+	if not isRoot and not isButtonChild then
+		local aspect = LayoutTranslator.ApplyAspectRatio(gui, node)
+		if aspect then stats.AspectRatios += 1 end
+	else
+		local uiScale = Instance.new("UIScale")
+		uiScale.Name = "ResponsiveUIScale"
+		uiScale.Scale = 1
+		uiScale.Parent = gui
+		stats.Scalers += 1
+	end
 	
 	gui.Parent = parent
 	stats.Total += 1
@@ -939,16 +1130,88 @@ local function buildHierarchy(node: any, parent: Instance, parentRect: any?, sta
 	if children and type(children) == "table" and #children > 0 then
 		for _, child in ipairs(children) do
 			if type(child) == "table" then
-				buildHierarchy(child, gui, curRect, stats, options)
+				buildHierarchy(child, gui, curRect, stats, options, false)
 			end
 		end
 	end
 	return gui
 end
 
+local function injectResponsiveScript(screenGui: ScreenGui, refWidth: number, refHeight: number)
+	screenGui:SetAttribute("ReferenceResolution", Vector2.new(refWidth, refHeight))
+	screenGui:SetAttribute("DesignWidth", refWidth)
+	screenGui:SetAttribute("DesignHeight", refHeight)
+	
+	local localScript = Instance.new("LocalScript")
+	localScript.Name = "ResponsiveUIScaler"
+	localScript.Source = string.format([=[--!strict
+--[[
+	ResponsiveUIScaler (Auto-generated by FigmaToRoblox)
+	Dynamically updates UIScale based on current viewport size to preserve
+	pixel-perfect design proportions across Mobile, Tablet, Desktop, and 4K displays.
+]]
+
+local camera = workspace.CurrentCamera
+local screenGui = script.Parent
+
+local function getTargetScale(): UIScale?
+	local rootFrame = screenGui:FindFirstChildWhichIsA("GuiObject")
+	if rootFrame then
+		local scale = rootFrame:FindFirstChild("ResponsiveUIScale") or rootFrame:FindFirstChildWhichIsA("UIScale")
+		if scale and scale:IsA("UIScale") then
+			return scale
+		end
+	end
+	return screenGui:FindFirstChildWhichIsA("UIScale")
+end
+
+local function updateScale()
+	local uiScale = getTargetScale()
+	if not uiScale then return end
+	
+	local refRes = screenGui:GetAttribute("ReferenceResolution") or Vector2.new(%d, %d)
+	local viewport = camera.ViewportSize
+	
+	if viewport.X > 0 and viewport.Y > 0 and refRes.X > 0 and refRes.Y > 0 then
+		local scaleX = viewport.X / refRes.X
+		local scaleY = viewport.Y / refRes.Y
+		local factor = math.min(scaleX, scaleY)
+		uiScale.Scale = math.clamp(factor, 0.2, 3.0)
+	end
+end
+
+if camera then
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+end
+
+screenGui.AncestryChanged:Connect(function()
+	if screenGui:IsDescendantOf(game) then
+		updateScale()
+	end
+end)
+
+updateScale()
+]=], math.round(refWidth), math.round(refHeight))
+	localScript.Parent = screenGui
+end
+
 function InstanceGenerator.Generate(root: any, target: Instance, options: any): (GuiObject?, any)
-	local stats = { Total = 0, Frames = 0, TextLabels = 0, ImageLabels = 0, Buttons = 0, TextBoxes = 0, Corners = 0, Strokes = 0, Shadows = 0, Layouts = 0 }
-	local rootGui = buildHierarchy(root, target, nil, stats, options or { sizingMode = "ResponsiveScale" })
+	local stats = { Total = 0, Frames = 0, TextLabels = 0, ImageLabels = 0, Buttons = 0, TextBoxes = 0, Corners = 0, Strokes = 0, Shadows = 0, Layouts = 0, AspectRatios = 0, Scalers = 0 }
+	
+	local rootRect = root.absoluteBoundingBox or root.absoluteRenderBounds or root.size or root.bounds
+	local refWidth = if rootRect then math.max(tonumber(rootRect.width or rootRect.w) or 1920, 100) else 1920
+	local refHeight = if rootRect then math.max(tonumber(rootRect.height or rootRect.h) or 1080, 100) else 1080
+	
+	local rootGui = buildHierarchy(root, target, nil, stats, options or { sizingMode = "ResponsiveScale" }, true)
+	
+	if target:IsA("ScreenGui") then
+		injectResponsiveScript(target, refWidth, refHeight)
+	elseif rootGui then
+		rootGui:SetAttribute("ReferenceResolution", Vector2.new(refWidth, refHeight))
+		rootGui:SetAttribute("DesignWidth", refWidth)
+		rootGui:SetAttribute("DesignHeight", refHeight)
+	end
+	
 	return rootGui, stats
 end
 
@@ -1064,7 +1327,7 @@ subLabel.Font = Config.UI.Font
 subLabel.TextSize = Config.UI.TextSizeSmall
 subLabel.TextColor3 = colors.SubText
 subLabel.TextXAlignment = Enum.TextXAlignment.Left
-subLabel.Text = "Paste Figma JSON to generate Studio UI hierarchy"
+subLabel.Text = "Responsive Auto-Scale Engine (v0.0.3)"
 subLabel.Parent = titleTextFrame
 
 -- Action Toolbar
@@ -1156,7 +1419,7 @@ jsonTextBox.Font = Config.UI.FontCode
 jsonTextBox.TextSize = Config.UI.TextSizeRegular
 jsonTextBox.TextColor3 = colors.MainText
 jsonTextBox.PlaceholderColor3 = colors.DimmedText
-jsonTextBox.PlaceholderText = "-- Paste Figma JSON string here --\n\nSupports:\n• Figma REST API responses\n• Custom Figma plugin node exports"
+jsonTextBox.PlaceholderText = "-- Paste Figma JSON string here --\n\nSupports:\n• Responsive UIScale & UIAspectRatio\n• Rainbow / Linear Gradients & Soft Shadows\n• Buttons, TextBoxes & AutoLayout"
 jsonTextBox.TextXAlignment = Enum.TextXAlignment.Left
 jsonTextBox.TextYAlignment = Enum.TextYAlignment.Top
 jsonTextBox.Text = ""
@@ -1280,7 +1543,7 @@ end
 
 sampleButton.MouseButton1Click:Connect(function()
 	jsonTextBox.Text = JsonParser.GetSample()
-	setStatus("Loaded sample Figma JSON. Click 'Generate UI' to test.", "idle")
+	setStatus("Loaded sample responsive Figma JSON. Click 'Generate UI' to test.", "idle")
 end)
 
 clearButton.MouseButton1Click:Connect(function()
@@ -1322,8 +1585,8 @@ generateButton.MouseButton1Click:Connect(function()
 		Selection:Set({ screenGui })
 		
 		print(string.format(
-			"[FigmaToRoblox] Generated '%s' in StarterGui (%d Instances: %d Frames, %d Buttons, %d TextBoxes, %d TextLabels, %d Images, %d Shadows, %d Corners, %d Strokes, %d Layouts)",
-			screenGuiName, stats.Total, stats.Frames, stats.Buttons, stats.TextBoxes, stats.TextLabels, stats.ImageLabels, stats.Shadows, stats.Corners, stats.Strokes, stats.Layouts
+			"[FigmaToRoblox] Generated '%s' in StarterGui (%d Elements: %d Frames, %d Buttons, %d TextBoxes, %d TextLabels, %d Images, %d Shadows, %d Corners, %d Strokes, %d Layouts, %d AspectRatios, %d Scalers)",
+			screenGuiName, stats.Total, stats.Frames, stats.Buttons, stats.TextBoxes, stats.TextLabels, stats.ImageLabels, stats.Shadows, stats.Corners, stats.Strokes, stats.Layouts, stats.AspectRatios, stats.Scalers
 		))
 	end)
 	
@@ -1339,7 +1602,7 @@ generateButton.MouseButton1Click:Connect(function()
 	
 	if genSuccess and statsResult then
 		setStatus(
-			string.format("✓ Generated '%s' (%d elements: %d buttons, %d shadows, %d text)!", rootNode.name, statsResult.Total, statsResult.Buttons, statsResult.Shadows, statsResult.TextLabels),
+			string.format("✓ Generated '%s' (%d elements: %d buttons, %d aspect constraints, %d UIScales)!", rootNode.name, statsResult.Total, statsResult.Buttons, statsResult.AspectRatios, statsResult.Scalers),
 			"success"
 		)
 	else
@@ -1347,4 +1610,4 @@ generateButton.MouseButton1Click:Connect(function()
 	end
 end)
 
-print("[FigmaToRoblox] Bundled plugin ready.")
+print("[FigmaToRoblox] Bundled plugin ready (v0.0.3).")
